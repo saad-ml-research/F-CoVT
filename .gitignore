@@ -1,0 +1,8 @@
+checkpoints/
+data/
+outputs/
+wandb/
+*.pt
+*.bin
+*.safetensors
+*.npz
