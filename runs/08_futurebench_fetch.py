@@ -18,12 +18,15 @@ items = fb if isinstance(fb, list) else list(fb.values()) if isinstance(fb, dict
 print(f"futurebench.json: {len(items)} items; keys: {list(items[0].keys())}")
 print("item[0]:", json.dumps(items[0], ensure_ascii=False)[:1500])
 paths = [it.get("video_path") or it.get("video") for it in items]
-need = {os.path.basename(p) for p in paths if p}
+def key(p):  # match on "<source>/<file>.mp4" (json says first_part_video/, the Hub folder is first_segment_video/)
+    parts = str(p).replace("\\", "/").split("/")
+    return "/".join(parts[-2:])
+need = {key(p) for p in paths if p}
 print(f"{len(need)} unique videos needed; example raw path: {paths[0]}")
 if a.inspect:
     raise SystemExit
 
-have = {f.name for f in VID.iterdir()}
+have = {f"{d.name}/{f.name}" for d in VID.iterdir() if d.is_dir() for f in d.iterdir()}
 missing = need - have
 fs = HfFileSystem()
 parts = sorted(fs.glob(f"datasets/{R}/{a.folder}/*.tar.gz"),
@@ -31,11 +34,14 @@ parts = sorted(fs.glob(f"datasets/{R}/{a.folder}/*.tar.gz"),
 for part in parts:
     if not missing:
         break
-    got = 0
+    got = 0; shown = 0
     with fs.open(part, "rb", block_size=64 * 2**20) as fh, tarfile.open(fileobj=fh, mode="r|gz") as tar:
         for m in tar:
-            b = os.path.basename(m.name)
+            if shown < 3 and m.isfile():
+                print("  tar member example:", m.name); shown += 1
+            b = key(m.name)
             if m.isfile() and b in missing:
+                (VID / b).parent.mkdir(parents=True, exist_ok=True)
                 with tar.extractfile(m) as src, open(VID / b, "wb") as dst:
                     dst.write(src.read())
                 missing.discard(b); got += 1
@@ -44,7 +50,7 @@ for part in parts:
 from datasets import Dataset, DatasetDict
 rows = []
 for it in items:
-    b = os.path.basename(it.get("video_path") or it.get("video") or "")
+    b = key(it.get("video_path") or it.get("video") or "")
     if (VID / b).exists():
         r = dict(it); r["video_path"] = str(VID / b); rows.append(r)
 print(f"{len(rows)}/{len(items)} questions have their video")
