@@ -1,0 +1,25 @@
+--- a/src/train/train.py
++++ b/src/train/train.py
+@@ -207,6 +207,22 @@
+     if get_model_vocab_size(model.config) < len(processor.tokenizer):
+         model.resize_token_embeddings(len(processor.tokenizer))
+ 
++    # [F-CoVT] LoRA wrap. Upstream has a lora_enable flag but never applies LoRA.
++    if training_args.lora_enable:
++        from peft import LoraConfig, get_peft_model
++        lora_cfg = LoraConfig(
++            r=training_args.lora_rank,
++            lora_alpha=training_args.lora_alpha,
++            lora_dropout=training_args.lora_dropout,
++            # language model linears only (vision tower stays frozen)
++            target_modules=r".*language_model.*\.(q_proj|k_proj|v_proj|o_proj|gate_proj|up_proj|down_proj)$",
++            modules_to_save=["embed_tokens", "lm_head"] + (
++                ["projection_head"] if getattr(model, "projection_head", None) is not None else []),
++            task_type="CAUSAL_LM",
++        )
++        model = get_peft_model(model, lora_cfg)
++        model.print_trainable_parameters()
++
+     # configure latent loss type
+     model.config.latent_loss = training_args.latent_loss
+     model.config.latent_lambda = training_args.latent_lambda
