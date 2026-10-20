@@ -75,5 +75,10 @@ for k in range(a.shards):
     print(f"{name}: {n_ok} ok, {n_bad} failed", flush=True)
 
 recs = [json.loads(l) for l in open(samples_file)]
+ov = Path("/workspace/data/overlap_train_ids.txt")   # from 09_overlap_check.py
+if ov.exists():
+    bad = set(ov.read_text().split())
+    n0 = len(recs); recs = [r for r in recs if r["id"] not in bad]
+    print(f"dropped {n0 - len(recs)} training samples overlapping FutureBench videos")
 json.dump(recs, open(out / "train.json", "w"), ensure_ascii=False)
 print(f"wrote {len(recs)} samples -> {out/'train.json'}")
