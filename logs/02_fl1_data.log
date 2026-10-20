@@ -1,0 +1,105 @@
+== README.md
+---
+license: other
+language:
+- en
+size_categories:
+- 10K<n<100K
+task_categories:
+- visual-question-answering
+pretty_name: Future-L1-50K
+tags:
+- video
+- multimodal
+- visual-reasoning
+- video-event-prediction
+- future-prediction
+- latent-visual-reasoning
+- supervised-fine-tuning
+configs:
+- config_name: default
+  data_files:
+  - split: train
+    path: data/train-*.parquet
+
+---
+
+# Future-L1-50K
+
+Future-L1-50K is the **SFT training set** used by **Imagine Before You Predict:
+Interleaved Latent Visual Reasoning for Video Event Prediction**, a framework
+for video event prediction with interleaved language and latent visual
+reasoning.
+
+- Project repository: https://github.com/OpenGVLab/Future-L1
+- Paper: https://arxiv.org/abs/2606.05769
+- Dataset file: `Future-L1-50K.json`
+- Video download references:
+  https://github.com/snap-research/Panda-70M/tree/main/dataset_dataloading
+  and https://huggingface.co/datasets/Liu-Junhua/TwiFF-2.7M
+
+
+## Citation
+
+If you use this dataset, please cite the paper:
+
+```bibtex
+@article{jiang2026imagine,
+  title={Imagine Before You Predict: Interleaved Latent Visual Reasoning for Video Event Prediction},
+  author={Jiang, Tianxiang and Wu, Linquan and Xia, Sheng and Li, Songze and Yan, Ziang and Yang, Haoyu and Qiao, Yu and Wang, Yi},
+  journal={arXiv preprint arXiv:2606.05769},
+  year={2026}
+}
+```
+
+
+== Future-L1-50K.json: 50000 samples
+keys: [('id', 50000), ('video', 50000), ('conversations', 50000), ('image', 50000), ('reasoning_image', 50000), ('class', 50000), ('answer', 50000), ('meta_data', 50000), ('correct_in_8_base', 50000), ('correct_in_8_hint', 50000), ('gain', 50000), ('mode', 50000)]
+sample[0]: {"id": "-0AAhXT99Zw_5", "video": "-0AAhXT99Zw-0:04:09.165-0:04:57.213.mp4", "conversations": [{"from": "human", "value": "frame_1\n<image>\nWill the group of people continue walking or start swimming in the water as they move further into it?"}, {"from": "gpt", "value": "In frame_1, the group of people is seen standing in shallow water, facing towards the city lights in the background. The lighting suggests it is nighttime, and the calmness of the water indicates a tranquil setting. As they begin to move further into the water, their posture and the slight splashes around their legs suggest they are transitioning from walking to swimming. <image>\nBy frame_2 , the individuals have moved deeper into the water, with some already submerged up to their waists. The reflections of city lights on the water surface and the relaxed body language of the group imply that they are preparing to swim. The calm water and their gradual movement into deeper areas support the idea that they will continue swimming."}], "image": [5], "reasoning_image": [8], "class": "Predictive", "answer": "The group of people will start swimming in the water.", "meta_data": {"Process": "Frames 5 and 8 depict a group of people walking into the water at night with city lights in the background. As they move further into the water, the scene transitions to them swimming. The visual cues of people entering the water and the calmness of the water suggest they will continue swimming.", "Summary": "The group of people will swim in the water.", "classification": "Predictive", "end": "0:04:57.213", "matching_score": 0.456298828125, "max_magnitude": 8.866546630859375, "mean_magnitude": 5.546757221221924, "start": "0:04:09.165"}, "correct_in_8_base": 0, "correct_in_8_hint": 8, "gain": 8, "mode": "interleave_minimal"}
+example video paths: ['-0AAhXT99Zw-0:04:09.165-0:04:57.213.mp4', '-1lQKgYoUpw-0:00:30.933-0:01:18.933.mp4', '-1lhh1t41hI-0:00:51.718-0:01:23.550.mp4']
+video path prefixes: [('-0AAhXT99Zw-0:04:09.165-0:04:57.213.mp4', 1), ('-1lQKgYoUpw-0:00:30.933-0:01:18.933.mp4', 1), ('-1lhh1t41hI-0:00:51.718-0:01:23.550.mp4', 1), ('-20nkwgwlwQ-0:00:22.355-0:00:37.904.mp4', 1), ('-2OW-eEU4nA-0:00:35.200-0:00:41.480.mp4', 1), ('-2g5QOqgVgE-0:03:35.400-0:03:47.440.mp4', 1), ('-6EKrSZ6nu0-0:03:28.958-0:03:38.851.mp4', 1), ('-7TwMQSXJmQ-0:01:44.000-0:01:52.720.mp4', 1), ('-7nrYAtJd9s-0:03:56.640-0:04:16.680.mp4', 1), ('-89gFhpI0G8-0:10:14.380-0:10:24.857.mp4', 1)]
+reasoning_image counts: [(1, 31340), (2, 16554), (3, 1673), (4, 255), (5, 93)]
+image counts: [(1, 50000)]
+
+== train-00000-of-00129.parquet: 387 rows
+id: string
+video: struct<bytes: binary, path: string>
+  child 0, bytes: binary
+  child 1, path: string
+conversations: list<element: struct<from: string, value: string>>
+  child 0, element: struct<from: string, value: string>
+      child 0, from: string
+      child 1, value: string
+image: list<element: int64>
+  child 0, element: int64
+reasoning_image: list<element: int64>
+  child 0, element: int64
+class: string
+answer: string
+meta_data: struct<Process: string, Summary: string, classification: string, end: string, matching_score: double (... 63 chars omitted)
+  child 0, Process: string
+  child 1, Summary: string
+  child 2, classification: string
+  child 3, end: string
+  child 4, matching_score: double
+  child 5, max_magnitude: double
+  child 6, mean_magnitude: double
+  child 7, start: string
+correct_in_8_base: int64
+correct_in_8_hint: int64
+gain: int64
+mode: string
+-- schema metadata --
+huggingface: '{"info": {"features": {"id": {"dtype": "string", "_type": "' + 1111
+  id: -0AAhXT99Zw_5
+  video: dict keys ['bytes', 'path']
+  conversations: list[2] first=dict keys ['from', 'value']
+  image: list[1] first=5
+  reasoning_image: list[1] first=8
+  class: Predictive
+  answer: The group of people will start swimming in the water.
+  meta_data: dict keys ['Process', 'Summary', 'classification', 'end', 'matching_score', 'max_magnitude', 'mean_magnitude', 'start']
+  correct_in_8_base: 0
+  correct_in_8_hint: 8
+  gain: 8
+  mode: interleave_minimal
