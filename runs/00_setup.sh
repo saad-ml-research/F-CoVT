@@ -21,12 +21,16 @@ if [ ! -d $W/envs/covt ]; then
 fi
 
 # --- env 2: fl1 (torch 2.6.0, transformers 4.57.1) ---
-if [ ! -d $W/envs/fl1 ]; then
+# Uses our minimal requirements; theirs is a full env dump with conflicting pins.
+# Marker file so a half-built env from a failed run is rebuilt.
+if [ ! -f $W/envs/fl1/.ok ]; then
+  rm -rf $W/envs/fl1
   uv venv $W/envs/fl1 --python 3.10
   source $W/envs/fl1/bin/activate
-  (cd Future-L1 && grep -v flash_attn requirements_sft.txt > /tmp/req_fl1.txt && uv pip install -r /tmp/req_fl1.txt)
+  uv pip install -r $W/F-CoVT/runs/fl1_requirements.txt
   uv pip install flash-attn==2.7.4.post1 --no-build-isolation
-  (cd Future-L1/lmms-eval && uv pip install -e .)
+  (cd $W/Future-L1/lmms-eval && uv pip install -e .)
+  touch $W/envs/fl1/.ok
   deactivate
 fi
 
