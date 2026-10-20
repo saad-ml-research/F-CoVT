@@ -36,7 +36,11 @@ ap.add_argument("--out", default="/workspace/data/fl1_10k")
 ap.add_argument("--max_side", type=int, default=640)
 a = ap.parse_args()
 out = Path(a.out); (out / "frames").mkdir(parents=True, exist_ok=True)
-tmp = Path("/workspace/data/_tmp_shards"); tmp.mkdir(parents=True, exist_ok=True)
+tmp = Path(f"/workspace/data/_tmp_shards/{os.getpid()}"); tmp.mkdir(parents=True, exist_ok=True)
+lock = out / "RUNNING.pid"
+if lock.exists() and Path(f"/proc/{lock.read_text().strip()}").exists():
+    raise SystemExit(f"another 07_fl1_frames.py is running (pid {lock.read_text().strip()}); stop it first")
+lock.write_text(str(os.getpid()))
 done_file = out / "done_shards.txt"
 done = set(done_file.read_text().split()) if done_file.exists() else set()
 samples_file = out / "samples.jsonl"
@@ -69,12 +73,13 @@ for k in range(a.shards):
                     fo.write(json.dumps(rec, ensure_ascii=False) + "\n"); n_ok += 1
                 except Exception as e:
                     n_bad += 1
-    os.remove(p)
+    Path(p).unlink(missing_ok=True)
     with open(done_file, "a") as fd:
         fd.write(name + "\n")
     print(f"{name}: {n_ok} ok, {n_bad} failed", flush=True)
 
-recs = [json.loads(l) for l in open(samples_file)]
+recs = list({r["id"]: r for r in (json.loads(l) for l in open(samples_file))}.values())  # dedupe by id
+lock.unlink(missing_ok=True)
 ov = Path("/workspace/data/overlap_train_ids.txt")   # from 09_overlap_check.py
 if ov.exists():
     bad = set(ov.read_text().split())
