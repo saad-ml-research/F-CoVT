@@ -1,0 +1,43 @@
+--- a/src/dataset/twiff_sft_dataset.py
++++ b/src/dataset/twiff_sft_dataset.py
+@@ -388,8 +388,8 @@
+     GPT-turn text segments are wrapped with <reason>...</reason> tags.
+     """
+     mode = (response_mode or "twiff").strip().lower()
+-    if mode not in {"twiff", "cot"}:
+-        raise ValueError(f"Unsupported response_mode: {response_mode}. Expected one of: twiff, cot.")
++    if mode not in {"twiff", "cot", "answer"}:
++        raise ValueError(f"Unsupported response_mode: {response_mode}. Expected one of: twiff, cot, answer.")
+ 
+     video_path = example.get("video", "")
+     image_indices = list(example.get("image", []))
+@@ -460,7 +460,12 @@
+         reasoning_text = gpt_turn.get("value", "") if gpt_turn else ""
+     final_answer = (example.get("answer", "") or "").strip()
+ 
+-    if mode == "cot":
++    if mode == "answer":
++        # [F-CoVT] row B: answer only, no reasoning, no future frames
++        if not final_answer:
++            return None
++        assistant_content.append({"type": "text", "text": f"<answer>{final_answer}</answer>"})
++    elif mode == "cot":
+         reasoning_parts = re.split(r"<image>", reasoning_text)
+         text_parts = []
+         for part in reasoning_parts:
+@@ -596,6 +601,7 @@
+                 self.system_message,
+                 getattr(self.args, "shuffle_latent_images", False),
+                 getattr(self.args, "random_seed", None),
++                os.environ.get("FCOVT_RESPONSE_MODE") or ex.get("twiff_response_mode", "twiff"),
+             )
+             for ex in raw_examples
+         ]
+@@ -751,6 +757,7 @@
+                     self.system_message,
+                     getattr(self.args, "shuffle_latent_images", False),
+                     getattr(self.args, "random_seed", None),
++                    os.environ.get("FCOVT_RESPONSE_MODE") or ex.get("twiff_response_mode", "twiff"),
+                 )
+                 if processed is not None:
+                     twiff_indices.append(len(examples))

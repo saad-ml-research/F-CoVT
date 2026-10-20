@@ -30,7 +30,10 @@ if [ ! -d $W/envs/fl1 ]; then
   deactivate
 fi
 
-# --- LoRA patch for Future-L1 (upstream never applies LoRA) ---
+# --- Future-L1 patches: LoRA wrap (upstream never applies it) + answer-only mode / response-mode fix ---
 cd $W/Future-L1
-git apply --check $W/F-CoVT/runs/patches/fl1_lora.patch 2>/dev/null && git apply $W/F-CoVT/runs/patches/fl1_lora.patch || echo "patch already applied or failed - check src/train/train.py"
+for P in fl1_lora fl1_response_mode; do
+  if git apply --check $W/F-CoVT/runs/patches/$P.patch 2>/dev/null; then git apply $W/F-CoVT/runs/patches/$P.patch && echo "applied $P"
+  else echo "skip $P (already applied?)"; fi
+done
 echo "setup done"
