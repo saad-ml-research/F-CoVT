@@ -34,6 +34,9 @@ if [ ! -f $W/envs/fl1/.ok ]; then
   deactivate
 fi
 
+# --- RunPod sets HF_HUB_ENABLE_HF_TRANSFER=1, which needs hf_transfer in every env ---
+for E in covt fl1; do uv pip install -q --python $W/envs/$E/bin/python hf_transfer; done
+
 # --- Future-L1 patches: LoRA wrap (upstream never applies it) + answer-only mode / response-mode fix ---
 cd $W/Future-L1
 for P in fl1_lora fl1_response_mode; do
