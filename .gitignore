@@ -6,3 +6,4 @@ wandb/
 *.bin
 *.safetensors
 *.npz
+__pycache__/

@@ -1,0 +1,12 @@
+--- a/src/dataset/twiff_sft_dataset.py
++++ b/src/dataset/twiff_sft_dataset.py
+@@ -68,6 +68,9 @@
+     # Using `max(clip_indices)` here would shift the underlying pool positions whenever
+     # max(clip) < 8 (e.g. for samples that only reference frames 1..4), producing frame
+     # locations that diverge from the TwiFF reference implementation.
++    # [F-CoVT] pre-extracted frames: video_path is a folder holding f1.jpg..f8.jpg (the 8-frame pool)
++    if os.path.isdir(video_path):
++        return [Image.open(os.path.join(video_path, f"f{i}.jpg")).convert("RGB") for i in clip_indices]
+     num_frames = 8
+     video_reader = decord.VideoReader(video_path, num_threads=1)
+     vlen = len(video_reader)
