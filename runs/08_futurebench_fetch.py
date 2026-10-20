@@ -10,6 +10,7 @@ from huggingface_hub import hf_hub_download, HfFileSystem
 
 ap = argparse.ArgumentParser(); ap.add_argument("--inspect", action="store_true")
 ap.add_argument("--folder", default="first_segment_video")
+ap.add_argument("--start_part", type=int, default=0, help="skip archives already streamed")
 a = ap.parse_args()
 R = "haonan3/V1-33K"; OUT = Path("/workspace/data/futurebench"); VID = OUT / "videos"
 VID.mkdir(parents=True, exist_ok=True)
@@ -20,17 +21,19 @@ print("item[0]:", json.dumps(items[0], ensure_ascii=False)[:1500])
 paths = [it.get("video_path") or it.get("video") for it in items]
 def key(p):  # match on "<source>/<file>.mp4" (json says first_part_video/, the Hub folder is first_segment_video/)
     parts = str(p).replace("\\", "/").split("/")
-    return "/".join(parts[-2:])
+    return os.path.splitext("/".join(parts[-2:]))[0]
 need = {key(p) for p in paths if p}
 print(f"{len(need)} unique videos needed; example raw path: {paths[0]}")
 if a.inspect:
     raise SystemExit
 
-have = {f"{d.name}/{f.name}" for d in VID.iterdir() if d.is_dir() for f in d.iterdir()}
+have = {key(str(f)) for d in VID.iterdir() if d.is_dir() for f in d.iterdir()}
+found = {key(str(f)): f for d in VID.iterdir() if d.is_dir() for f in d.iterdir()}
 missing = need - have
 fs = HfFileSystem()
 parts = sorted(fs.glob(f"datasets/{R}/{a.folder}/*.tar.gz"),
                key=lambda s: int(s.rsplit("part", 1)[1].split(".")[0]))
+parts = parts[a.start_part:]
 for part in parts:
     if not missing:
         break
@@ -41,8 +44,10 @@ for part in parts:
                 print("  tar member example:", m.name); shown += 1
             b = key(m.name)
             if m.isfile() and b in missing:
-                (VID / b).parent.mkdir(parents=True, exist_ok=True)
-                with tar.extractfile(m) as src, open(VID / b, "wb") as dst:
+                dst_path = VID / (b + os.path.splitext(m.name)[1])
+                dst_path.parent.mkdir(parents=True, exist_ok=True)
+                found[b] = dst_path
+                with tar.extractfile(m) as src, open(dst_path, "wb") as dst:
                     dst.write(src.read())
                 missing.discard(b); got += 1
     print(f"{part.rsplit('/',1)[1]}: +{got}, still missing {len(missing)}", flush=True)
@@ -51,8 +56,11 @@ from datasets import Dataset, DatasetDict
 rows = []
 for it in items:
     b = key(it.get("video_path") or it.get("video") or "")
-    if (VID / b).exists():
-        r = dict(it); r["video_path"] = str(VID / b); rows.append(r)
+    if b in found:
+        r = dict(it); r["video_path"] = str(found[b]); rows.append(r)
 print(f"{len(rows)}/{len(items)} questions have their video")
+if missing:
+    (OUT / "missing.txt").write_text("\n".join(sorted(missing)))
+    print(f"{len(missing)} videos never found -> {OUT/'missing.txt'}; e.g. {sorted(missing)[:5]}")
 DatasetDict({"test": Dataset.from_list(rows)}).save_to_disk(str(OUT / "hf"))
 print(f"FB_DATA={OUT/'hf'}  FB_VIDEOS={VID}")

@@ -8,7 +8,7 @@ export HF_HOME=/workspace/hf
 mkdir -p /workspace/F-CoVT/logs
 case "$1" in
   inspect) python /workspace/F-CoVT/runs/08_futurebench_fetch.py --inspect 2>&1 | tee /workspace/F-CoVT/logs/08_fb_inspect.log ;;
-  fb)      python /workspace/F-CoVT/runs/08_futurebench_fetch.py 2>&1 | tee /workspace/F-CoVT/logs/08_fb_fetch.log ;;
+  fb)      python /workspace/F-CoVT/runs/08_futurebench_fetch.py --start_part ${START:-0} 2>&1 | tee -a /workspace/F-CoVT/logs/08_fb_fetch.log ;;
   train)   python /workspace/F-CoVT/runs/07_fl1_frames.py --shards ${SHARDS:-26} 2>&1 | tee /workspace/F-CoVT/logs/07_fl1_frames.log ;;
   *) echo "usage: $0 inspect|fb|train"; exit 1 ;;
 esac
