@@ -1,20 +1,39 @@
-"""Print file list, sizes, JSON keys, one sample, and how many video paths exist on disk."""
+"""Inspect Future-L1-50K: README, JSON fields + one sample, and one parquet shard's schema."""
 import json, os, sys
 from pathlib import Path
 from collections import Counter
 
 root = Path(sys.argv[1])
-files = sorted(p for p in root.rglob("*") if p.is_file())
-print(f"{len(files)} files")
-for p in files[:30]:
-    print(f"  {p.relative_to(root)}  {p.stat().st_size/1e6:.1f} MB")
-for p in [f for f in files if f.suffix in (".json", ".jsonl")][:3]:
-    data = [json.loads(l) for l in open(p)] if p.suffix == ".jsonl" else json.load(open(p))
+readme = root / "README.md"
+if readme.exists():
+    print("== README.md\n" + readme.read_text()[:3000])
+
+for p in sorted(root.glob("*.json")):
+    data = json.load(open(p))
     print(f"\n== {p.name}: {len(data)} samples")
     print("keys:", Counter(k for d in data for k in d).most_common())
-    s = json.dumps(data[0], ensure_ascii=False)
-    print("sample[0]:", s[:1500])
+    print("sample[0]:", json.dumps(data[0], ensure_ascii=False)[:2000])
     vids = [d.get("video") or (d.get("videos") or [""])[0] for d in data]
-    exists = sum(os.path.exists(v) for v in vids[:500] if v)
-    print(f"video paths (first 500): {exists} exist on disk; example: {vids[0]}")
-    print("reasoning_image index counts:", Counter(len(d.get("reasoning_image", [])) for d in data).most_common(5))
+    print("example video paths:", vids[:3])
+    print("video path prefixes:", Counter(str(v).split("/")[0] for v in vids).most_common(10))
+    print("reasoning_image counts:", Counter(len(d.get("reasoning_image", [])) for d in data).most_common(5))
+    print("image counts:", Counter(len(d.get("image", [])) for d in data).most_common(5))
+
+import pyarrow.parquet as pq
+for p in sorted(root.glob("data/*.parquet"))[:1]:
+    f = pq.ParquetFile(p)
+    print(f"\n== {p.name}: {f.metadata.num_rows} rows")
+    print(f.schema_arrow)
+    row = f.read_row_group(0).slice(0, 1).to_pylist()[0]
+    for k, v in row.items():
+        if isinstance(v, (bytes, bytearray)):
+            print(f"  {k}: <bytes {len(v)}>")
+        elif isinstance(v, dict):
+            print(f"  {k}: dict keys {list(v)[:10]}")
+        elif isinstance(v, list):
+            first = v[0] if v else None
+            desc = f"<bytes {len(first)}>" if isinstance(first, (bytes, bytearray)) else (
+                f"dict keys {list(first)[:6]}" if isinstance(first, dict) else str(first)[:200])
+            print(f"  {k}: list[{len(v)}] first={desc}")
+        else:
+            print(f"  {k}: {str(v)[:300]}")
