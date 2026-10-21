@@ -1,0 +1,10 @@
+--- a/src/trainer/future_l1_trainer.py
++++ b/src/trainer/future_l1_trainer.py
+@@ -3,6 +3,7 @@
+ import torch.nn as nn
+ 
+ from transformers import Trainer
++from src.train.train_utils import get_peft_state_non_lora_maybe_zero_3  # [F-CoVT] used in _save_checkpoint, missing upstream
+ from transformers.trainer import (
+     is_sagemaker_mp_enabled,
+     get_parameter_names,
