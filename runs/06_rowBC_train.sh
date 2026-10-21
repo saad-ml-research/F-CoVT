@@ -5,7 +5,7 @@
 # Future frames are never shown in either mode. SMOKE=50 for a speed test.
 set -e
 MODE=${MODE:?set MODE=answer or MODE=cot}
-DATA=${DATA:-/workspace/data/fl1_10k.json}
+DATA=${DATA:-/workspace/data/fl1_10k/train.json}
 SMOKE=${SMOKE:-0}
 TAG=$([ "$MODE" = answer ] && echo rowB || echo rowC)
 OUT=/workspace/outputs/${TAG}_$(date +%m%d_%H%M)

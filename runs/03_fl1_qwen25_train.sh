@@ -4,7 +4,7 @@
 set -e
 source /workspace/envs/fl1/bin/activate
 export HF_HOME=/workspace/hf PYTHONPATH=/workspace/Future-L1 TOKENIZERS_PARALLELISM=false WANDB_MODE=offline
-DATA=${DATA:-/workspace/data/fl1_10k.json}
+DATA=${DATA:-/workspace/data/fl1_10k/train.json}
 N_STEPS_SMOKE=${SMOKE:-0}            # SMOKE=50 for a quick speed test
 OUT=/workspace/outputs/rowD_fl1_qwen25_$(date +%m%d_%H%M)
 cd /workspace/Future-L1
