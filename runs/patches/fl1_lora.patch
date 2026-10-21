@@ -15,9 +15,9 @@
 +            target_modules=r".*language_model.*\.(q_proj|k_proj|v_proj|o_proj|gate_proj|up_proj|down_proj)$",
 +            modules_to_save=["embed_tokens", "lm_head"] + (
 +                ["projection_head"] if getattr(model, "projection_head", None) is not None else []),
-+            task_type="CAUSAL_LM",
 +        )
-+        model = get_peft_model(model, lora_cfg)
++        # no task_type: PeftModelForCausalLM would pass return_dict twice into Future-L1's patched forward
+        model = get_peft_model(model, lora_cfg)
 +        model.print_trainable_parameters()
 +
      # configure latent loss type
