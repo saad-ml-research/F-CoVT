@@ -1,21 +1,2 @@
-data/train-00007-of-00129.parquet: 357 ok, 0 failed
-data/train-00008-of-00129.parquet: 392 ok, 0 failed
-data/train-00009-of-00129.parquet: 388 ok, 0 failed
-data/train-00010-of-00129.parquet: 361 ok, 0 failed
-data/train-00011-of-00129.parquet: 375 ok, 0 failed
-data/train-00012-of-00129.parquet: 396 ok, 0 failed
-data/train-00013-of-00129.parquet: 404 ok, 0 failed
-data/train-00014-of-00129.parquet: 393 ok, 0 failed
-data/train-00015-of-00129.parquet: 363 ok, 0 failed
-data/train-00016-of-00129.parquet: 380 ok, 0 failed
-data/train-00017-of-00129.parquet: 345 ok, 0 failed
-data/train-00018-of-00129.parquet: 411 ok, 0 failed
-data/train-00019-of-00129.parquet: 379 ok, 0 failed
-data/train-00020-of-00129.parquet: 392 ok, 0 failed
-data/train-00021-of-00129.parquet: 378 ok, 0 failed
-data/train-00022-of-00129.parquet: 386 ok, 0 failed
-data/train-00023-of-00129.parquet: 357 ok, 0 failed
-data/train-00024-of-00129.parquet: 377 ok, 0 failed
-data/train-00025-of-00129.parquet: 375 ok, 0 failed
 dropped 0 training samples overlapping FutureBench videos
 wrote 9872 samples -> /workspace/data/fl1_10k/train.json

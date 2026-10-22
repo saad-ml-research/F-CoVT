@@ -1,0 +1,240 @@
+⚙️  Running in WANDB offline mode
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:  20%|██        | 1/5 [00:00<00:00,  9.96it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:00<00:00, 30.85it/s]
+The image processor of type `Qwen2VLImageProcessor` is now loaded as a fast processor by default, even if the model checkpoint was saved with a slow processor. This is a breaking change and may produce slightly different outputs. To continue using the slow processor, instantiate this class with `use_fast=False`. Note that this behavior will be extended to all models in a future release.
+/workspace/envs/fl1/lib/python3.10/site-packages/peft/tuners/tuners_utils.py:1225: UserWarning: Model has `tie_word_embeddings=True` and a tied layer is part of the adapter, but `ensure_weight_tying` is not set to True. This can lead to complications, for example when merging the adapter or converting your model to formats other than safetensors. Check the discussion here: https://github.com/huggingface/peft/issues/2777
+  warnings.warn(msg)
+trainable params: 1,130,364,928 || all params: 9,422,531,584 || trainable%: 11.9964
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+WARNING:accelerate.accelerator:Gradient accumulation steps mismatch: GradientAccumulationPlugin has 1, DeepSpeed config has 16. Using DeepSpeed's value.
+  0%|          | 0/50 [00:00<?, ?it/s][rank0]: Traceback (most recent call last):
+[rank0]:   File "/workspace/Future-L1/src/train/train.py", line 261, in <module>
+[rank0]:     train()
+[rank0]:   File "/workspace/Future-L1/src/train/train.py", line 252, in train
+[rank0]:     trainer.train()
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/transformers/trainer.py", line 2325, in train
+[rank0]:     return inner_training_loop(
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/transformers/trainer.py", line 2674, in _inner_training_loop
+[rank0]:     tr_loss_step = self.training_step(model, inputs, num_items_in_batch)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/transformers/trainer.py", line 4020, in training_step
+[rank0]:     loss = self.compute_loss(model, inputs, num_items_in_batch=num_items_in_batch)
+[rank0]:   File "/workspace/Future-L1/src/trainer/future_l1_trainer.py", line 88, in compute_loss
+[rank0]:     outputs = model(**inputs)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/deepspeed/utils/nvtx.py", line 20, in wrapped_fn
+[rank0]:     ret_val = func(*args, **kwargs)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/deepspeed/runtime/engine.py", line 2179, in forward
+[rank0]:     loss = self.module(*inputs, **kwargs)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1845, in _call_impl
+[rank0]:     return inner()
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1793, in inner
+[rank0]:     result = forward_call(*args, **kwargs)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/peft/peft_model.py", line 1923, in forward
+[rank0]:     return self.base_model(
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/peft/tuners/tuners_utils.py", line 311, in forward
+[rank0]:     return self.model.forward(*args, **kwargs)
+[rank0]:   File "/workspace/Future-L1/src/train/monkey_patch_forward.py", line 629, in qwen2_5_vl_generation_forward
+[rank0]:     outputs = self.model(
+[rank0]: TypeError: Qwen2_5_VLModel(
+[rank0]:   (visual): Qwen2_5_VisionTransformerPretrainedModel(
+[rank0]:     (patch_embed): Qwen2_5_VisionPatchEmbed(
+[rank0]:       (proj): Conv3d(3, 1280, kernel_size=(2, 14, 14), stride=(2, 14, 14), bias=False)
+[rank0]:     )
+[rank0]:     (rotary_pos_emb): Qwen2_5_VisionRotaryEmbedding()
+[rank0]:     (blocks): ModuleList(
+[rank0]:       (0-31): 32 x Qwen2_5_VLVisionBlock(
+[rank0]:         (norm1): Qwen2RMSNorm((1280,), eps=1e-06)
+[rank0]:         (norm2): Qwen2RMSNorm((1280,), eps=1e-06)
+[rank0]:         (attn): Qwen2_5_VLVisionAttention(
+[rank0]:           (qkv): Linear(in_features=1280, out_features=3840, bias=True)
+[rank0]:           (proj): Linear(in_features=1280, out_features=1280, bias=True)
+[rank0]:         )
+[rank0]:         (mlp): Qwen2_5_VLMLP(
+[rank0]:           (gate_proj): Linear(in_features=1280, out_features=3420, bias=True)
+[rank0]:           (up_proj): Linear(in_features=1280, out_features=3420, bias=True)
+[rank0]:           (down_proj): Linear(in_features=3420, out_features=1280, bias=True)
+[rank0]:           (act_fn): SiLUActivation()
+[rank0]:         )
+[rank0]:       )
+[rank0]:     )
+[rank0]:     (merger): Qwen2_5_VLPatchMerger(
+[rank0]:       (ln_q): Qwen2RMSNorm((1280,), eps=1e-06)
+[rank0]:       (mlp): Sequential(
+[rank0]:         (0): Linear(in_features=5120, out_features=5120, bias=True)
+[rank0]:         (1): GELU(approximate='none')
+[rank0]:         (2): Linear(in_features=5120, out_features=3584, bias=True)
+[rank0]:       )
+[rank0]:     )
+[rank0]:   )
+[rank0]:   (language_model): Qwen2_5_VLTextModel(
+[rank0]:     (embed_tokens): ModulesToSaveWrapper(
+[rank0]:       (original_module): Embedding(152064, 3584)
+[rank0]:       (modules_to_save): ModuleDict(
+[rank0]:         (default): Embedding(152064, 3584)
+[rank0]:       )
+[rank0]:     )
+[rank0]:     (layers): ModuleList(
+[rank0]:       (0-27): 28 x Qwen2_5_VLDecoderLayer(
+[rank0]:         (self_attn): Qwen2_5_VLAttention(
+[rank0]:           (q_proj): lora.Linear(
+[rank0]:             (base_layer): Linear(in_features=3584, out_features=3584, bias=True)
+[rank0]:             (lora_dropout): ModuleDict(
+[rank0]:               (default): Dropout(p=0.01, inplace=False)
+[rank0]:             )
+[rank0]:             (lora_A): ModuleDict(
+[rank0]:               (default): Linear(in_features=3584, out_features=16, bias=False)
+[rank0]:             )
+[rank0]:             (lora_B): ModuleDict(
+[rank0]:               (default): Linear(in_features=16, out_features=3584, bias=False)
+[rank0]:             )
+[rank0]:             (lora_embedding_A): ParameterDict()
+[rank0]:             (lora_embedding_B): ParameterDict()
+[rank0]:             (lora_magnitude_vector): ModuleDict()
+[rank0]:           )
+[rank0]:           (k_proj): lora.Linear(
+[rank0]:             (base_layer): Linear(in_features=3584, out_features=512, bias=True)
+[rank0]:             (lora_dropout): ModuleDict(
+[rank0]:               (default): Dropout(p=0.01, inplace=False)
+[rank0]:             )
+[rank0]:             (lora_A): ModuleDict(
+[rank0]:               (default): Linear(in_features=3584, out_features=16, bias=False)
+[rank0]:             )
+[rank0]:             (lora_B): ModuleDict(
+[rank0]:               (default): Linear(in_features=16, out_features=512, bias=False)
+[rank0]:             )
+[rank0]:             (lora_embedding_A): ParameterDict()
+[rank0]:             (lora_embedding_B): ParameterDict()
+[rank0]:             (lora_magnitude_vector): ModuleDict()
+[rank0]:           )
+[rank0]:           (v_proj): lora.Linear(
+[rank0]:             (base_layer): Linear(in_features=3584, out_features=512, bias=True)
+[rank0]:             (lora_dropout): ModuleDict(
+[rank0]:               (default): Dropout(p=0.01, inplace=False)
+[rank0]:             )
+[rank0]:             (lora_A): ModuleDict(
+[rank0]:               (default): Linear(in_features=3584, out_features=16, bias=False)
+[rank0]:             )
+[rank0]:             (lora_B): ModuleDict(
+[rank0]:               (default): Linear(in_features=16, out_features=512, bias=False)
+[rank0]:             )
+[rank0]:             (lora_embedding_A): ParameterDict()
+[rank0]:             (lora_embedding_B): ParameterDict()
+[rank0]:             (lora_magnitude_vector): ModuleDict()
+[rank0]:           )
+[rank0]:           (o_proj): lora.Linear(
+[rank0]:             (base_layer): Linear(in_features=3584, out_features=3584, bias=False)
+[rank0]:             (lora_dropout): ModuleDict(
+[rank0]:               (default): Dropout(p=0.01, inplace=False)
+[rank0]:             )
+[rank0]:             (lora_A): ModuleDict(
+[rank0]:               (default): Linear(in_features=3584, out_features=16, bias=False)
+[rank0]:             )
+[rank0]:             (lora_B): ModuleDict(
+[rank0]:               (default): Linear(in_features=16, out_features=3584, bias=False)
+[rank0]:             )
+[rank0]:             (lora_embedding_A): ParameterDict()
+[rank0]:             (lora_embedding_B): ParameterDict()
+[rank0]:             (lora_magnitude_vector): ModuleDict()
+[rank0]:           )
+[rank0]:           (rotary_emb): Qwen2_5_VLRotaryEmbedding()
+[rank0]:         )
+[rank0]:         (mlp): Qwen2MLP(
+[rank0]:           (gate_proj): lora.Linear(
+[rank0]:             (base_layer): Linear(in_features=3584, out_features=18944, bias=False)
+[rank0]:             (lora_dropout): ModuleDict(
+[rank0]:               (default): Dropout(p=0.01, inplace=False)
+[rank0]:             )
+[rank0]:             (lora_A): ModuleDict(
+[rank0]:               (default): Linear(in_features=3584, out_features=16, bias=False)
+[rank0]:             )
+[rank0]:             (lora_B): ModuleDict(
+[rank0]:               (default): Linear(in_features=16, out_features=18944, bias=False)
+[rank0]:             )
+[rank0]:             (lora_embedding_A): ParameterDict()
+[rank0]:             (lora_embedding_B): ParameterDict()
+[rank0]:             (lora_magnitude_vector): ModuleDict()
+[rank0]:           )
+[rank0]:           (up_proj): lora.Linear(
+[rank0]:             (base_layer): Linear(in_features=3584, out_features=18944, bias=False)
+[rank0]:             (lora_dropout): ModuleDict(
+[rank0]:               (default): Dropout(p=0.01, inplace=False)
+[rank0]:             )
+[rank0]:             (lora_A): ModuleDict(
+[rank0]:               (default): Linear(in_features=3584, out_features=16, bias=False)
+[rank0]:             )
+[rank0]:             (lora_B): ModuleDict(
+[rank0]:               (default): Linear(in_features=16, out_features=18944, bias=False)
+[rank0]:             )
+[rank0]:             (lora_embedding_A): ParameterDict()
+[rank0]:             (lora_embedding_B): ParameterDict()
+[rank0]:             (lora_magnitude_vector): ModuleDict()
+[rank0]:           )
+[rank0]:           (down_proj): lora.Linear(
+[rank0]:             (base_layer): Linear(in_features=18944, out_features=3584, bias=False)
+[rank0]:             (lora_dropout): ModuleDict(
+[rank0]:               (default): Dropout(p=0.01, inplace=False)
+[rank0]:             )
+[rank0]:             (lora_A): ModuleDict(
+[rank0]:               (default): Linear(in_features=18944, out_features=16, bias=False)
+[rank0]:             )
+[rank0]:             (lora_B): ModuleDict(
+[rank0]:               (default): Linear(in_features=16, out_features=3584, bias=False)
+[rank0]:             )
+[rank0]:             (lora_embedding_A): ParameterDict()
+[rank0]:             (lora_embedding_B): ParameterDict()
+[rank0]:             (lora_magnitude_vector): ModuleDict()
+[rank0]:           )
+[rank0]:           (act_fn): SiLUActivation()
+[rank0]:         )
+[rank0]:         (input_layernorm): Qwen2RMSNorm((3584,), eps=1e-06)
+[rank0]:         (post_attention_layernorm): Qwen2RMSNorm((3584,), eps=1e-06)
+[rank0]:       )
+[rank0]:     )
+[rank0]:     (norm): Qwen2RMSNorm((3584,), eps=1e-06)
+[rank0]:     (rotary_emb): Qwen2_5_VLRotaryEmbedding()
+[rank0]:   )
+[rank0]: ) got multiple values for keyword argument 'return_dict'
+Exception in thread Thread-2 (_pin_memory_loop):
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+  0%|          | 0/50 [00:00<?, ?it/s]
+[rank0]:[W1021 22:58:07.304744104 ProcessGroupNCCL.cpp:1496] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+E1021 22:58:08.883000 1358 torch/distributed/elastic/multiprocessing/api.py:869] failed (exitcode: 1) local_rank: 0 (pid: 1426) of binary: /workspace/envs/fl1/bin/python
+Traceback (most recent call last):
+  File "/workspace/envs/fl1/bin/torchrun", line 10, in <module>
+    sys.exit(main())
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 355, in wrapper
+    return f(*args, **kwargs)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/run.py", line 918, in main
+    run(args)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/run.py", line 909, in run
+    elastic_launch(
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 138, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 269, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+src/train/train.py FAILED
+------------------------------------------------------------
+Failures:
+  <NO_OTHER_FAILURES>
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-10-21_22:58:08
+  host      : 3ecbaa1fc176
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 1426)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================

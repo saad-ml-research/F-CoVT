@@ -1,0 +1,22 @@
+⚙️  Running in WANDB offline mode
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:00<00:00, 18.17it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:00<00:00, 34.28it/s]
+The image processor of type `Qwen2VLImageProcessor` is now loaded as a fast processor by default, even if the model checkpoint was saved with a slow processor. This is a breaking change and may produce slightly different outputs. To continue using the slow processor, instantiate this class with `use_fast=False`. Note that this behavior will be extended to all models in a future release.
+/workspace/envs/fl1/lib/python3.10/site-packages/peft/tuners/tuners_utils.py:1225: UserWarning: Model has `tie_word_embeddings=True` and a tied layer is part of the adapter, but `ensure_weight_tying` is not set to True. This can lead to complications, for example when merging the adapter or converting your model to formats other than safetensors. Check the discussion here: https://github.com/huggingface/peft/issues/2777
+  warnings.warn(msg)
+trainable params: 1,130,364,928 || all params: 9,422,531,584 || trainable%: 11.9964
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+WARNING:accelerate.accelerator:Gradient accumulation steps mismatch: GradientAccumulationPlugin has 1, DeepSpeed config has 16. Using DeepSpeed's value.
+  0%|          | 0/10 [00:00<?, ?it/s]`loss_type=None` was set in the config but it is unrecognized. Using the default loss: `ForCausalLMLoss`.
+ 10%|█         | 1/10 [00:07<01:04,  7.14s/it]                                              {'train/ce_loss': 2.4066123589873314, 'epoch': 0.0}
+ 10%|█         | 1/10 [00:07<01:04,  7.14s/it] 20%|██        | 2/10 [00:13<00:53,  6.73s/it]                                              {'train/ce_loss': 2.6531184390187263, 'epoch': 0.0}
+ 20%|██        | 2/10 [00:13<00:53,  6.73s/it] 30%|███       | 3/10 [00:19<00:45,  6.56s/it]                                              {'train/ce_loss': 2.1851459816098213, 'epoch': 0.0}
+ 30%|███       | 3/10 [00:20<00:45,  6.56s/it] 40%|████      | 4/10 [00:26<00:38,  6.48s/it]                                              {'train/ce_loss': 2.3475983515381813, 'epoch': 0.01}
+ 40%|████      | 4/10 [00:26<00:38,  6.48s/it] 50%|█████     | 5/10 [00:32<00:31,  6.35s/it]                                              {'loss': 2.3015, 'grad_norm': 2.4853813648223877, 'learning_rate': 3.7500000000000003e-05, 'epoch': 0.01}
+ 50%|█████     | 5/10 [00:32<00:31,  6.35s/it]                                              {'train/ce_loss': 1.9150990545749664, 'epoch': 0.01}
+ 50%|█████     | 5/10 [00:32<00:31,  6.35s/it] 60%|██████    | 6/10 [00:38<00:25,  6.39s/it]                                              {'train/ce_loss': 1.7008037753403187, 'epoch': 0.01}
+ 60%|██████    | 6/10 [00:39<00:25,  6.39s/it] 70%|███████   | 7/10 [00:45<00:18,  6.31s/it]                                              {'train/ce_loss': 1.6484248600900173, 'epoch': 0.01}
+ 70%|███████   | 7/10 [00:45<00:18,  6.31s/it] 80%|████████  | 8/10 [00:51<00:12,  6.33s/it]                                              {'train/ce_loss': 1.4168362654745579, 'epoch': 0.01}
+ 80%|████████  | 8/10 [00:51<00:12,  6.33s/it] 90%|█████████ | 9/10 [00:57<00:06,  6.34s/it]                                              {'train/ce_loss': 1.3210194781422615, 'epoch': 0.01}
+ 90%|█████████ | 9/10 [00:57<00:06,  6.34s/it]100%|██████████| 10/10 [01:03<00:00,  6.28s/it]                                               {'loss': 1.4676, 'grad_norm': 2.7255427837371826, 'learning_rate': 1.5076844803522922e-06, 'epoch': 0.02}
+100%|██████████| 10/10 [01:03<00:00,  6.28s/it]

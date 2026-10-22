@@ -1,0 +1,23 @@
+⚙️  Running in WANDB offline mode
+df: /root/.triton/autotune: No such file or directory
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:00<00:00, 18.33it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:00<00:00, 33.12it/s]
+The image processor of type `Qwen2VLImageProcessor` is now loaded as a fast processor by default, even if the model checkpoint was saved with a slow processor. This is a breaking change and may produce slightly different outputs. To continue using the slow processor, instantiate this class with `use_fast=False`. Note that this behavior will be extended to all models in a future release.
+trainable params: 40,380,928 || all params: 8,332,547,584 || trainable%: 0.4846
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+WARNING:accelerate.accelerator:Gradient accumulation steps mismatch: GradientAccumulationPlugin has 1, DeepSpeed config has 16. Using DeepSpeed's value.
+  0%|          | 0/10 [00:00<?, ?it/s]`loss_type=None` was set in the config but it is unrecognized. Using the default loss: `ForCausalLMLoss`.
+ 10%|█         | 1/10 [00:07<01:07,  7.48s/it]                                              {'train/ce_loss': 2.4066123589873314, 'epoch': 0.0}
+ 10%|█         | 1/10 [00:07<01:07,  7.48s/it] 20%|██        | 2/10 [00:13<00:53,  6.75s/it]                                              {'train/ce_loss': 2.6531184390187263, 'epoch': 0.0}
+ 20%|██        | 2/10 [00:13<00:53,  6.75s/it] 30%|███       | 3/10 [00:19<00:45,  6.52s/it]                                              {'train/ce_loss': 2.3400507792830467, 'epoch': 0.0}
+ 30%|███       | 3/10 [00:20<00:45,  6.52s/it] 40%|████      | 4/10 [00:26<00:38,  6.43s/it]                                              {'train/ce_loss': 2.681859850883484, 'epoch': 0.01}
+ 40%|████      | 4/10 [00:26<00:38,  6.43s/it] 50%|█████     | 5/10 [00:32<00:31,  6.29s/it]                                              {'loss': 2.4664, 'grad_norm': 0.17430126667022705, 'learning_rate': 3.7500000000000003e-05, 'epoch': 0.01}
+ 50%|█████     | 5/10 [00:32<00:31,  6.29s/it]                                              {'train/ce_loss': 2.250250741839409, 'epoch': 0.01}
+ 50%|█████     | 5/10 [00:32<00:31,  6.29s/it] 60%|██████    | 6/10 [00:38<00:25,  6.29s/it]                                              {'train/ce_loss': 2.0296683087944984, 'epoch': 0.01}
+ 60%|██████    | 6/10 [00:38<00:25,  6.29s/it] 70%|███████   | 7/10 [00:44<00:18,  6.20s/it]                                              {'train/ce_loss': 1.9348823875188828, 'epoch': 0.01}
+ 70%|███████   | 7/10 [00:44<00:18,  6.20s/it] 80%|████████  | 8/10 [00:50<00:12,  6.21s/it]                                              {'train/ce_loss': 1.6990735083818436, 'epoch': 0.01}
+ 80%|████████  | 8/10 [00:51<00:12,  6.21s/it] 90%|█████████ | 9/10 [00:57<00:06,  6.22s/it]                                              {'train/ce_loss': 1.568274699151516, 'epoch': 0.01}
+ 90%|█████████ | 9/10 [00:57<00:06,  6.22s/it]100%|██████████| 10/10 [01:03<00:00,  6.22s/it]                                               {'loss': 1.7381, 'grad_norm': 0.23532207310199738, 'learning_rate': 1.5076844803522922e-06, 'epoch': 0.02}
+100%|██████████| 10/10 [01:03<00:00,  6.22s/it]                                               {'train_runtime': 72.3804, 'train_samples_per_second': 2.211, 'train_steps_per_second': 0.138, 'train_loss': 2.1022640228271485, 'epoch': 0.02}
+100%|██████████| 10/10 [01:12<00:00,  6.22s/it]100%|██████████| 10/10 [01:12<00:00,  7.24s/it]
+[rank0]:[W1021 23:33:19.638507961 ProcessGroupNCCL.cpp:1496] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
