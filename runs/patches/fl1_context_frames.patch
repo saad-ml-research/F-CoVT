@@ -1,0 +1,30 @@
+--- a/src/dataset/twiff_sft_dataset.py
++++ b/src/dataset/twiff_sft_dataset.py
+@@ -398,6 +398,13 @@
+     image_indices = list(example.get("image", []))
+     reasoning_indices = list(example.get("reasoning_image", []))
+ 
++    # [F-CoVT] context frames: also show up to FCOVT_CONTEXT earlier pool frames before the question frame
++    n_ctx = int(os.environ.get("FCOVT_CONTEXT", "0") or 0)
++    prior_indices = []
++    if n_ctx > 0 and image_indices:
++        q0 = image_indices[0]
++        prior_indices = list(range(max(1, q0 - n_ctx), q0))
++        image_indices = prior_indices + image_indices
+     frame_indices = image_indices + reasoning_indices if mode == "twiff" else image_indices
+     frames = []
+     if frame_indices:
+@@ -435,6 +442,13 @@
+     user_content = []
+     question_text = human_turn.get("value", "")
+     q_frame_idx = 0
++    if prior_indices:  # [F-CoVT] earlier frames first, oldest to newest; the question's <image> stays the current frame
++        user_content.append({"type": "text", "text": "Earlier frames (oldest first):"})
++        for _ in prior_indices:
++            user_content.append({"type": "image", "image": question_frames[q_frame_idx],
++                                 "max_pixels": max_pixels, "min_pixels": min_pixels})
++            q_frame_idx += 1
++        user_content.append({"type": "text", "text": "Current frame:"})
+ 
+     for part in re.split(r"(<image>)", question_text):
+         part = part.strip()

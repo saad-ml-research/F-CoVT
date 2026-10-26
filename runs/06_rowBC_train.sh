@@ -8,10 +8,12 @@ MODE=${MODE:?set MODE=answer or MODE=cot}
 DATA=${DATA:-/workspace/data/fl1_10k/train.json}
 SMOKE=${SMOKE:-0}
 TAG=$([ "$MODE" = answer ] && echo rowB || echo rowC)
+CONTEXT=${CONTEXT:-0}                 # CONTEXT=4: also show up to 4 earlier frames (rows B', C')
+[ "$CONTEXT" -gt 0 ] && TAG="${TAG}ctx${CONTEXT}"
 OUT=/workspace/outputs/${TAG}_$(date +%m%d_%H%M)
 source /workspace/envs/fl1/bin/activate
 export HF_HOME=/workspace/hf PYTHONPATH=/workspace/Future-L1 TOKENIZERS_PARALLELISM=false WANDB_MODE=offline
-export FCOVT_RESPONSE_MODE=$MODE
+export FCOVT_RESPONSE_MODE=$MODE FCOVT_CONTEXT=$CONTEXT
 cd /workspace/Future-L1
 EXTRA=""; [ "$SMOKE" -gt 0 ] && EXTRA="--max_steps $SMOKE"
 torchrun --nproc_per_node 1 src/train/train.py \
