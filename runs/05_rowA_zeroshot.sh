@@ -4,7 +4,7 @@
 #   futurebench_future_l1 = answer inside <answer></answer> (same prompt we use for B and C)
 # Needs FB_DATA (load_from_disk folder) and FB_VIDEOS (V1-33K video root).
 set -e
-: "${FB_DATA:?set FB_DATA}" ; : "${FB_VIDEOS:?set FB_VIDEOS}"
+FB_DATA=${FB_DATA:-/workspace/data/futurebench/hf}; FB_VIDEOS=${FB_VIDEOS:-/workspace/data/futurebench/videos}
 MODEL=${MODEL:-Qwen/Qwen2.5-VL-7B-Instruct}
 TAG=${TAG:-rowA}
 TASKS=${TASKS:-"futurebench futurebench_future_l1"}
