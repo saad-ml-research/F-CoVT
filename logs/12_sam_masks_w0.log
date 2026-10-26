@@ -1,0 +1,52 @@
+4993 frames total (14979 future), 4727 to do
+/workspace/CoVT/train/src/anchors/segment_anything/build_sam.py:106: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  state_dict = torch.load(f)
+100/4727  6.34 s/frame  ETA 8.1 h
+200/4727  6.14 s/frame  ETA 7.7 h
+300/4727  6.04 s/frame  ETA 7.4 h
+400/4727  6.08 s/frame  ETA 7.3 h
+500/4727  6.06 s/frame  ETA 7.1 h
+600/4727  6.06 s/frame  ETA 6.9 h
+700/4727  6.00 s/frame  ETA 6.7 h
+800/4727  5.99 s/frame  ETA 6.5 h
+900/4727  6.00 s/frame  ETA 6.4 h
+1000/4727  6.02 s/frame  ETA 6.2 h
+1100/4727  6.03 s/frame  ETA 6.1 h
+1200/4727  6.04 s/frame  ETA 5.9 h
+1300/4727  6.07 s/frame  ETA 5.8 h
+1400/4727  6.06 s/frame  ETA 5.6 h
+1500/4727  6.05 s/frame  ETA 5.4 h
+1600/4727  6.06 s/frame  ETA 5.3 h
+1700/4727  6.06 s/frame  ETA 5.1 h
+1800/4727  6.06 s/frame  ETA 4.9 h
+1900/4727  6.06 s/frame  ETA 4.8 h
+2000/4727  6.06 s/frame  ETA 4.6 h
+2100/4727  6.05 s/frame  ETA 4.4 h
+2200/4727  6.05 s/frame  ETA 4.2 h
+2300/4727  6.05 s/frame  ETA 4.1 h
+2400/4727  6.05 s/frame  ETA 3.9 h
+2500/4727  6.05 s/frame  ETA 3.7 h
+2600/4727  6.05 s/frame  ETA 3.6 h
+2700/4727  6.05 s/frame  ETA 3.4 h
+2800/4727  6.06 s/frame  ETA 3.2 h
+2900/4727  6.06 s/frame  ETA 3.1 h
+3000/4727  6.06 s/frame  ETA 2.9 h
+3100/4727  6.05 s/frame  ETA 2.7 h
+3200/4727  6.06 s/frame  ETA 2.6 h
+3300/4727  6.05 s/frame  ETA 2.4 h
+3400/4727  6.06 s/frame  ETA 2.2 h
+3500/4727  6.05 s/frame  ETA 2.1 h
+3600/4727  6.05 s/frame  ETA 1.9 h
+3700/4727  6.05 s/frame  ETA 1.7 h
+3800/4727  6.05 s/frame  ETA 1.6 h
+3900/4727  6.05 s/frame  ETA 1.4 h
+4000/4727  6.05 s/frame  ETA 1.2 h
+4100/4727  6.05 s/frame  ETA 1.1 h
+4200/4727  6.05 s/frame  ETA 0.9 h
+4300/4727  6.05 s/frame  ETA 0.7 h
+4400/4727  6.05 s/frame  ETA 0.5 h
+4500/4727  6.06 s/frame  ETA 0.4 h
+4600/4727  6.06 s/frame  ETA 0.2 h
+4700/4727  6.06 s/frame  ETA 0.0 h
+4727/4727  6.05 s/frame  ETA 0.0 h
+done
