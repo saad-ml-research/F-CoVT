@@ -120,7 +120,7 @@
  
 --- a/src/trainer/future_l1_trainer.py
 +++ b/src/trainer/future_l1_trainer.py
-@@ -86,8 +86,16 @@
+@@ -86,8 +86,20 @@
          Compute loss, accumulate for console logging (every logging_steps),
          and report auxiliary losses via HF Trainer logging (e.g. W&B).
          """
@@ -128,6 +128,10 @@
 -        loss = outputs.loss
 +        fcovt_meta = inputs.pop("fcovt_meta", None)  # [F-CoVT]
 +        if fcovt_meta is not None and getattr(self, "fcovt", None) is not None:
++            # thought tokens are fixed inputs (forced at test time), not something to predict: no CE on them
++            if inputs.get("labels") is not None:
++                tid = torch.tensor(list(self.fcovt.ids.values()), device=inputs["labels"].device)
++                inputs["labels"] = inputs["labels"].masked_fill(torch.isin(inputs["input_ids"], tid), -100)
 +            outputs = model(**inputs, output_hidden_states=True)
 +            extra, parts = self.fcovt(model, outputs.hidden_states[-1], inputs["input_ids"], fcovt_meta)
 +            loss = outputs.loss + extra
