@@ -4,16 +4,16 @@
 #   MODE=cot    -> row C (question frames -> text reasoning -> answer)
 # Future frames are never shown in either mode. SMOKE=50 for a speed test.
 set -e
-MODE=${MODE:?set MODE=answer or MODE=cot}
+MODE=${MODE:?set MODE=answer | cot | fcovt (row E) | fcovt_generic (row D)}
 DATA=${DATA:-/workspace/data/fl1_10k/train.json}
 SMOKE=${SMOKE:-0}
-TAG=$([ "$MODE" = answer ] && echo rowB || echo rowC)
+case "$MODE" in answer) TAG=rowB;; cot) TAG=rowC;; fcovt) TAG=rowE;; fcovt_generic) TAG=rowD;; *) echo "bad MODE"; exit 1;; esac
 CONTEXT=${CONTEXT:-0}                 # CONTEXT=4: also show up to 4 earlier frames (rows B', C')
 [ "$CONTEXT" -gt 0 ] && TAG="${TAG}ctx${CONTEXT}"
 OUT=/workspace/outputs/${TAG}_$(date +%m%d_%H%M)
 source /workspace/envs/fl1/bin/activate
 export HF_HOME=/workspace/hf PYTHONPATH=/workspace/Future-L1 TOKENIZERS_PARALLELISM=false WANDB_MODE=offline
-export FCOVT_RESPONSE_MODE=$MODE FCOVT_CONTEXT=$CONTEXT
+export FCOVT_RESPONSE_MODE=$MODE FCOVT_CONTEXT=$CONTEXT TORCH_HOME=/workspace/torch FCOVT_CODE=/workspace/F-CoVT/runs/fcovt
 cd /workspace/Future-L1
 EXTRA=""; [ "$SMOKE" -gt 0 ] && EXTRA="--max_steps $SMOKE"
 torchrun --nproc_per_node 1 src/train/train.py \

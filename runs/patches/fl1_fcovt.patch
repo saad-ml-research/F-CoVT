@@ -1,0 +1,153 @@
+--- a/src/dataset/twiff_sft_dataset.py
++++ b/src/dataset/twiff_sft_dataset.py
+@@ -391,8 +391,8 @@
+     GPT-turn text segments are wrapped with <reason>...</reason> tags.
+     """
+     mode = (response_mode or "twiff").strip().lower()
+-    if mode not in {"twiff", "cot", "answer"}:
+-        raise ValueError(f"Unsupported response_mode: {response_mode}. Expected one of: twiff, cot, answer.")
++    if mode not in {"twiff", "cot", "answer", "fcovt", "fcovt_generic"}:
++        raise ValueError(f"Unsupported response_mode: {response_mode}. Expected one of: twiff, cot, answer, fcovt, fcovt_generic.")
+ 
+     video_path = example.get("video", "")
+     image_indices = list(example.get("image", []))
+@@ -477,7 +477,16 @@
+         reasoning_text = gpt_turn.get("value", "") if gpt_turn else ""
+     final_answer = (example.get("answer", "") or "").strip()
+ 
+-    if mode == "answer":
++    if mode in ("fcovt", "fcovt_generic"):
++        # [F-CoVT] rows E / D: future thought tokens (supervised in the trainer), then the answer
++        import sys as _sys
++        _sys.path.insert(0, os.environ.get("FCOVT_CODE", "/workspace/F-CoVT/runs/fcovt"))
++        from fcovt_core import thought_text
++        if not final_answer:
++            return None
++        thoughts = thought_text("fcovt" if mode == "fcovt" else "generic", len(reasoning_indices))
++        assistant_content.append({"type": "text", "text": thoughts + f"<answer>{final_answer}</answer>"})
++    elif mode == "answer":
+         # [F-CoVT] row B: answer only, no reasoning, no future frames
+         if not final_answer:
+             return None
+@@ -622,7 +631,12 @@
+             )
+             for ex in raw_examples
+         ]
+-        examples = [ex for ex in examples if ex is not None]
++        # [F-CoVT] keep per-sample frame info aligned with the kept examples (for the expert losses)
++        fcovt_metas = [{"frames_dir": r.get("video", ""), "cur": int((r.get("image") or [1])[-1]),
++                        "fut": [int(k) for k in (r.get("reasoning_image") or [])]} for r in raw_examples]
++        keep = [i for i, e in enumerate(examples) if e is not None]
++        examples = [examples[i] for i in keep]
++        fcovt_metas = [fcovt_metas[i] for i in keep]
+         if not examples:
+             return {}
+ 
+@@ -696,6 +710,8 @@
+             )
+             batch["image_out_mask"] = image_out_mask
+ 
++        if (os.environ.get("FCOVT_RESPONSE_MODE") or "").startswith("fcovt"):
++            batch["fcovt_meta"] = fcovt_metas
+         return batch
+ 
+     def _process_video_vision_info(self, examples):
+--- a/src/train/train.py
++++ b/src/train/train.py
+@@ -1,4 +1,5 @@
+ import os
++import sys
+ import pathlib
+ import torch
+ from transformers import AutoProcessor, AutoConfig, HfArgumentParser
+@@ -195,6 +196,15 @@
+     latent_id = processor.tokenizer.convert_tokens_to_ids("<|latent|>")
+     latent_start_id = processor.tokenizer.convert_tokens_to_ids("<|latent_start|>")
+     latent_end_id = processor.tokenizer.convert_tokens_to_ids("<|latent_end|>")
++
++    # [F-CoVT] future thought tokens (rows D/E)
++    fcovt_mode = os.environ.get("FCOVT_RESPONSE_MODE", "")
++    FCOVT_TOKEN_IDS = []
++    if fcovt_mode.startswith("fcovt"):
++        sys.path.insert(0, os.environ.get("FCOVT_CODE", "/workspace/F-CoVT/runs/fcovt"))
++        import fcovt_core
++        processor.tokenizer.add_tokens(fcovt_core.ALL_TOKENS, special_tokens=True)
++        FCOVT_TOKEN_IDS = [processor.tokenizer.convert_tokens_to_ids(t) for t in fcovt_core.ALL_TOKENS]
+  
+     model.config.latent_id = latent_id
+     model.config.latent_start_id = latent_start_id
+@@ -220,13 +230,21 @@
+             modules_to_save=["projection_head"] if getattr(model, "projection_head", None) is not None else None,
+         )
+         try:
+-            lora_cfg = LoraConfig(trainable_token_indices=[latent_id, latent_start_id, latent_end_id], **lora_kwargs)
++            lora_cfg = LoraConfig(trainable_token_indices=[latent_id, latent_start_id, latent_end_id] + FCOVT_TOKEN_IDS, **lora_kwargs)
+         except TypeError:  # older peft without trainable_token_indices: new tokens stay frozen
+             lora_cfg = LoraConfig(**lora_kwargs)
+         # no task_type: PeftModelForCausalLM passes return_dict twice into Future-L1's patched forward
+         model = get_peft_model(model, lora_cfg)
+         model.print_trainable_parameters()
+ 
++    fcovt_heads = None
++    if FCOVT_TOKEN_IDS:  # [F-CoVT] heads live on the base model so the optimizer sees them; not part of the LoRA adapter
++        _base = model.get_base_model() if hasattr(model, "get_base_model") else model
++        _hidden = getattr(getattr(_base.config, "text_config", None), "hidden_size", None) or _base.config.hidden_size
++        _base.fcovt_heads = fcovt_core.build_heads("fcovt" if fcovt_mode == "fcovt" else "generic", _hidden).to(dtype=compute_dtype)
++        fcovt_heads = _base.fcovt_heads
++        print(f"[F-CoVT] mode={fcovt_mode} heads params: {sum(p.numel() for p in fcovt_heads.parameters()):,}")
++
+     # configure latent loss type
+     model.config.latent_loss = training_args.latent_loss
+     model.config.latent_lambda = training_args.latent_lambda
+@@ -249,6 +267,8 @@
+         args=training_args,
+         **data_module
+     )
++    if fcovt_heads is not None:
++        trainer.fcovt = fcovt_core.FCoVTLoss("fcovt" if fcovt_mode == "fcovt" else "generic", fcovt_heads, processor)
+ 
+     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
+         trainer.train(resume_from_checkpoint=True)
+@@ -258,6 +278,9 @@
+     trainer.save_state()
+     
+     safe_save_model_for_hf_trainer(trainer, output_dir=training_args.output_dir)
++    if fcovt_heads is not None and training_args.should_save:
++        torch.save({k: v.detach().cpu() for k, v in fcovt_heads.state_dict().items()},
++                   os.path.join(training_args.output_dir, "fcovt_heads.pt"))
+ 
+ 
+ 
+--- a/src/trainer/future_l1_trainer.py
++++ b/src/trainer/future_l1_trainer.py
+@@ -86,8 +86,16 @@
+         Compute loss, accumulate for console logging (every logging_steps),
+         and report auxiliary losses via HF Trainer logging (e.g. W&B).
+         """
+-        outputs = model(**inputs)
+-        loss = outputs.loss
++        fcovt_meta = inputs.pop("fcovt_meta", None)  # [F-CoVT]
++        if fcovt_meta is not None and getattr(self, "fcovt", None) is not None:
++            outputs = model(**inputs, output_hidden_states=True)
++            extra, parts = self.fcovt(model, outputs.hidden_states[-1], inputs["input_ids"], fcovt_meta)
++            loss = outputs.loss + extra
++            if parts:
++                self._accumulate_step_metrics(parts)
++        else:
++            outputs = model(**inputs)
++            loss = outputs.loss
+ 
+         ce_loss_val = None
+         latent_loss_val = None
+--- a/lmms-eval/lmms_eval/models/qwen2_5_vl.py
++++ b/lmms-eval/lmms_eval/models/qwen2_5_vl.py
+@@ -291,6 +291,9 @@
+                 messages.append(message)
+ 
+             text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
++            _pfx = __import__("os").environ.get("FCOVT_PREFIX", "")  # [F-CoVT] force thought tokens before the answer
++            if _pfx:
++                text = [t + _pfx for t in text] if isinstance(text, list) else text + _pfx
+             image_inputs, video_inputs, video_kwargs = process_vision_info(messages, return_video_kwargs=True)
+             inputs = self.processor(
+                 text=text,
