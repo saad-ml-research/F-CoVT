@@ -19,6 +19,7 @@ ap.add_argument("--ckpt", default="/workspace/CoVT/train/src/anchors/segment_any
 ap.add_argument("--current", type=int, default=1, help="also do the current (question) frames, after all future ones")
 ap.add_argument("--points_per_batch", type=int, default=256, help="speed only; does not change results")
 ap.add_argument("--limit", type=int, default=0, help="only the first N jobs (for a speed test)")
+ap.add_argument("--shard", default="0/1", help="i/n: this worker takes every n-th frame starting at i")
 a = ap.parse_args()
 
 data = json.load(open(a.data))
@@ -28,6 +29,7 @@ if a.current:
 seen = set(); jobs = [j for j in jobs if not ((j[0], j[2]) in seen or seen.add((j[0], j[2])))]
 if a.limit:
     jobs = jobs[: a.limit]
+si, sn = map(int, a.shard.split("/")); jobs = jobs[si::sn]
 out = Path(a.out)
 todo = [j for j in jobs if not (out / j[0] / f"f{j[2]}.npz").exists()]
 print(f"{len(jobs)} frames total ({sum(len(d['reasoning_image']) for d in data)} future), {len(todo)} to do", flush=True)
