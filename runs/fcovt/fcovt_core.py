@@ -29,6 +29,9 @@ from scipy.optimize import linear_sum_assignment
 COVT_SRC = os.environ.get("COVT_SRC", "/workspace/CoVT/train/src")
 MAX_FUTURE = int(os.environ.get("FCOVT_MAX_FUTURE", "2"))
 GAMMA = float(os.environ.get("FCOVT_GAMMA", "1.0"))
+W_SEG = float(os.environ.get("FCOVT_W_SEG", "1.0"))     # per-expert weights (for ablations / gradient checks)
+W_DEP = float(os.environ.get("FCOVT_W_DEPTH", "1.0"))
+W_DINO = float(os.environ.get("FCOVT_W_DINO", "1.0"))
 
 START, END = "<|fcovt_start|>", "<|fcovt_end|>"
 SEG, DEP, DINO, LAT = "<|fcovt_seg|>", "<|fcovt_depth|>", "<|fcovt_dino|>", "<|fcovt_lat|>"
@@ -263,7 +266,7 @@ class FCoVTLoss:
                     l_dep = F.l1_loss(d_pred, d_gt) * 0.005
                     l_dino = F.mse_loss(self.heads.dino_pred(h[t == self.ids[DINO]]).float(),
                                         self.experts.dino_feats(fut).float()) * 0.5
-                    step = l_seg + l_dep + l_dino
+                    step = W_SEG * l_seg + W_DEP * l_dep + W_DINO * l_dino
                     for name, v in (("seg", l_seg), ("depth", l_dep), ("dino", l_dino)):
                         parts[f"train/{name}_loss"] = parts.get(f"train/{name}_loss", 0.0) + float(v.detach())
                 else:
