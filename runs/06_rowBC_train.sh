@@ -10,7 +10,7 @@ SMOKE=${SMOKE:-0}
 case "$MODE" in answer) TAG=rowB;; cot) TAG=rowC;; fcovt) TAG=rowE;; fcovt_generic) TAG=rowD;; *) echo "bad MODE"; exit 1;; esac
 CONTEXT=${CONTEXT:-0}                 # CONTEXT=4: also show up to 4 earlier frames (rows B', C')
 [ "$CONTEXT" -gt 0 ] && TAG="${TAG}ctx${CONTEXT}"
-OUT=/workspace/outputs/${TAG}_$(date +%m%d_%H%M)
+OUT=${OUT:-/workspace/outputs/${TAG}_$(date +%m%d_%H%M)}   # OUT=<existing run dir> resumes from its last checkpoint
 source /workspace/envs/fl1/bin/activate
 export HF_HOME=/workspace/hf PYTHONPATH=/workspace/Future-L1 TOKENIZERS_PARALLELISM=false WANDB_MODE=offline
 export FCOVT_RESPONSE_MODE=$MODE FCOVT_CONTEXT=$CONTEXT TORCH_HOME=/workspace/torch FCOVT_CODE=/workspace/F-CoVT/runs/fcovt
