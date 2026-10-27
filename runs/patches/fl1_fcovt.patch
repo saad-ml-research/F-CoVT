@@ -76,15 +76,21 @@
   
      model.config.latent_id = latent_id
      model.config.latent_start_id = latent_start_id
-@@ -220,13 +230,21 @@
-             modules_to_save=["projection_head"] if getattr(model, "projection_head", None) is not None else None,
-         )
-         try:
--            lora_cfg = LoraConfig(trainable_token_indices=[latent_id, latent_start_id, latent_end_id], **lora_kwargs)
-+            lora_cfg = LoraConfig(trainable_token_indices=[latent_id, latent_start_id, latent_end_id] + FCOVT_TOKEN_IDS, **lora_kwargs)
-         except TypeError:  # older peft without trainable_token_indices: new tokens stay frozen
-             lora_cfg = LoraConfig(**lora_kwargs)
-         # no task_type: PeftModelForCausalLM passes return_dict twice into Future-L1's patched forward
+@@ -207,6 +217,13 @@
+     if get_model_vocab_size(model.config) < len(processor.tokenizer):
+         model.resize_token_embeddings(len(processor.tokenizer))
+ 
++    # [F-CoVT] thought tokens: start from the mean real-token embedding and stay frozen (fixed placeholders;
++    # the thinking is in the hidden states). Training their rows made grad norms explode (~35-90 vs ~2.5).
++    if FCOVT_TOKEN_IDS:
++        with torch.no_grad():
++            _emb = model.get_input_embeddings().weight
++            _emb[FCOVT_TOKEN_IDS] = _emb[:latent_id].float().mean(0, keepdim=True).to(_emb.dtype)
++
+     # [F-CoVT] LoRA wrap. Upstream has a lora_enable flag but never applies LoRA.
+     # Slim version: LoRA on language-model linears + only the 3 new latent-token rows trainable
+     # (not full embed_tokens/lm_head copies, which made checkpoints ~20 GB).
+@@ -227,6 +244,14 @@
          model = get_peft_model(model, lora_cfg)
          model.print_trainable_parameters()
  
@@ -99,7 +105,7 @@
      # configure latent loss type
      model.config.latent_loss = training_args.latent_loss
      model.config.latent_lambda = training_args.latent_lambda
-@@ -249,6 +267,8 @@
+@@ -249,6 +274,8 @@
          args=training_args,
          **data_module
      )
@@ -108,7 +114,7 @@
  
      if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
          trainer.train(resume_from_checkpoint=True)
-@@ -258,6 +278,9 @@
+@@ -258,6 +285,9 @@
      trainer.save_state()
      
      safe_save_model_for_hf_trainer(trainer, output_dir=training_args.output_dir)
