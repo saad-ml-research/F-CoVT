@@ -17,6 +17,17 @@ else:  # trainer didn't save the processor: rebuild it with the 3 latent tokens 
 base = Qwen2_5_VLForConditionalGeneration.from_pretrained(
     "Qwen/Qwen2.5-VL-7B-Instruct", torch_dtype=torch.bfloat16, device_map="cpu")
 base.resize_token_embeddings(len(proc.tokenizer))
+# F-CoVT runs: training set the thought-token rows to the mean real-token embedding inside the BASE model
+# (frozen, so not in the adapter). Reproduce that here, or eval would see different thought embeddings.
+tok = proc.tokenizer
+if "<|fcovt_start|>" in tok.get_vocab():
+    names = ["<|fcovt_start|>", "<|fcovt_end|>", "<|fcovt_seg|>", "<|fcovt_depth|>", "<|fcovt_dino|>", "<|fcovt_lat|>"]
+    ids = [tok.convert_tokens_to_ids(t) for t in names]
+    latent_id = tok.convert_tokens_to_ids("<|latent|>")
+    with torch.no_grad():
+        emb = base.get_input_embeddings().weight
+        emb[ids] = emb[:latent_id].float().mean(0, keepdim=True).to(emb.dtype)
+    print(f"set {len(ids)} F-CoVT thought-token embeddings to the mean of rows [0, {latent_id})")
 model = PeftModel.from_pretrained(base, adapter).merge_and_unload()
 model.save_pretrained(out, safe_serialization=True)
 proc.save_pretrained(out)
