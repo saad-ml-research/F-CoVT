@@ -1,6 +1,7 @@
 #!/bin/bash
 # Eval rows D/E on FutureBench with their thought tokens forced before the answer.
 # usage: MODE=fcovt RUN=/workspace/outputs/rowEctx4_xxx [STEPS=2] [LIMIT=20] bash runs/14_eval_thoughts.sh
+# row F (CoVT curriculum) writes its own thoughts: MODE=fcovt_staged RUN=... STEPS=0
 set -e
 : "${MODE:?fcovt or fcovt_generic}"; : "${RUN:?run dir with merged/}"
 STEPS=${STEPS:-2}

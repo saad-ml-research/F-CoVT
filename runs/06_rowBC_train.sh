@@ -4,16 +4,19 @@
 #   MODE=cot    -> row C (question frames -> text reasoning -> answer)
 # Future frames are never shown in either mode. SMOKE=50 for a speed test.
 set -e
-MODE=${MODE:?set MODE=answer | cot | fcovt (row E) | fcovt_generic (row D)}
+MODE=${MODE:?set MODE=answer | cot | fcovt (row E) | fcovt_generic (row D) | fcovt_staged (row F)}
 DATA=${DATA:-/workspace/data/fl1_10k/train.json}
 SMOKE=${SMOKE:-0}
-case "$MODE" in answer) TAG=rowB;; cot) TAG=rowC;; fcovt) TAG=rowE;; fcovt_generic) TAG=rowD;; *) echo "bad MODE"; exit 1;; esac
+case "$MODE" in answer) TAG=rowB;; cot) TAG=rowC;; fcovt) TAG=rowE;; fcovt_generic) TAG=rowD;; fcovt_staged) TAG=rowF;; *) echo "bad MODE"; exit 1;; esac
 CONTEXT=${CONTEXT:-0}                 # CONTEXT=4: also show up to 4 earlier frames (rows B', C')
 [ "$CONTEXT" -gt 0 ] && TAG="${TAG}ctx${CONTEXT}"
 OUT=${OUT:-/workspace/outputs/${TAG}_$(date +%m%d_%H%M)}   # OUT=<existing run dir> resumes from its last checkpoint
 source /workspace/envs/fl1/bin/activate
 export HF_HOME=/workspace/hf PYTHONPATH=/workspace/Future-L1 TOKENIZERS_PARALLELISM=false WANDB_MODE=offline
 export FCOVT_RESPONSE_MODE=$MODE FCOVT_CONTEXT=$CONTEXT TORCH_HOME=/workspace/torch FCOVT_CODE=/workspace/F-CoVT/runs/fcovt
+export FCOVT_STEP_FILE=$OUT/fcovt_step.txt     # row F: trainer tells the data workers the current step (stage)
+[ "$MODE" = fcovt_staged ] && export FCOVT_HEAD_LR=${FCOVT_HEAD_LR:-1e-5}   # CoVT projection_layer_lr
+GA=${GA:-16}; WORKERS=${WORKERS:-8}            # smoke tests: GA=2 WORKERS=1 so stages switch on time
 cd /workspace/Future-L1
 EXTRA=""; [ "$SMOKE" -gt 0 ] && EXTRA="--max_steps $SMOKE"
 torchrun --nproc_per_node 1 src/train/train.py \
@@ -25,9 +28,9 @@ torchrun --nproc_per_node 1 src/train/train.py \
   --latent_loss mse --latent_lambda 0.0 \
   --learning_rate 5e-5 --weight_decay 0.1 --warmup_ratio 0.05 --lr_scheduler_type cosine \
   --bf16 True --tf32 True --gradient_checkpointing True \
-  --per_device_train_batch_size 1 --gradient_accumulation_steps 16 --num_train_epochs 1 $EXTRA \
+  --per_device_train_batch_size 1 --gradient_accumulation_steps $GA --num_train_epochs 1 $EXTRA \
   --image_min_pixels $((64*28*28)) --image_max_pixels $((256*28*28)) \
-  --lazy_preprocess True --dataloader_num_workers 8 --random_seed 42 \
+  --lazy_preprocess True --dataloader_num_workers $WORKERS --random_seed 42 \
   --save_strategy steps --save_steps 200 --save_total_limit 2 --logging_steps 5 \
   --output_dir $OUT --report_to none 2>&1 | tee /workspace/F-CoVT/logs/06_$(basename $OUT).log
 [ "$SMOKE" -gt 0 ] && exit 0

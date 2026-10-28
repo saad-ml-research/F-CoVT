@@ -97,8 +97,77 @@ class GenericHead(nn.Module):
         return self.out(o[0])
 
 
+class StagedHeads(ExpertHeads):
+    """Row F (CoVT curriculum): expert heads + trainable OUTPUT rows for the 6 thought tokens, so the model
+    can write the thoughts itself (CoVT trains the new lm_head rows). Input-embedding rows stay frozen."""
+
+    def __init__(self, hidden=3584):
+        super().__init__(hidden)
+        self.out_rows = nn.Parameter(torch.zeros(len(ALL_TOKENS), hidden))
+
+
 def build_heads(mode, hidden):
+    if mode == "staged":
+        return StagedHeads(hidden)
     return ExpertHeads(hidden) if mode == "fcovt" else GenericHead(hidden)
+
+
+# ----------------------------------------------------------------------------- row F: CoVT's 4-stage curriculum
+# CoVT train/scripts/finetune.sh: 6k steps tokens-in-prompt, then 3k "What is the <expert> of the image?",
+# 3k "<think> Because the <expert> of the image is <pads>. </think><answer>", 4k of which 1/6 have no thoughts
+# and a random subset of experts, expert losses off for the last 2k. Same proportions of our step budget:
+STAGES = [float(x) for x in os.environ.get("FCOVT_STAGES", "0.375,0.5625,0.75,0.875").split(",")]
+S1_TARGET = os.environ.get("FCOVT_S1_TARGET", "current")   # stage 1 targets: current frame (CoVT-exact) or future
+STEP_FILE = os.environ.get("FCOVT_STEP_FILE", "")
+EXPERTS = [("seg", SEG, N_SEG, "segmentation"), ("depth", DEP, N_DEP, "depth map"),
+           ("dino", DINO, N_DINO, "perception feature")]      # CoVT's order and names (data.get_anchor_task_name)
+
+
+def write_step(step, max_steps):
+    """Trainer -> dataloader workers: the current step (workers are separate processes)."""
+    if STEP_FILE:
+        os.makedirs(os.path.dirname(STEP_FILE) or ".", exist_ok=True)
+        with open(STEP_FILE + ".tmp", "w") as f:
+            f.write(f"{step} {max_steps}")
+        os.replace(STEP_FILE + ".tmp", STEP_FILE)
+
+
+def current_stage():
+    """-> (stage 1..4, expert losses on?). Without a step file: stage 3 with experts."""
+    try:
+        s, m = open(STEP_FILE).read().split()
+        frac = int(s) / max(1, int(m))
+    except Exception:
+        return 3, True
+    return 1 + sum(frac >= b for b in STAGES[:3]), frac < STAGES[3]
+
+
+def _pad(i):
+    return START + EXPERTS[i][1] * EXPERTS[i][2] + END
+
+
+def sample_plan(stage, experts_on, rng):
+    """Per-sample choices, made in the collator so the text and the loss agree."""
+    if stage == 4 and rng.randint(0, 5) == 0:       # CoVT: 1 in 6 answers without thoughts
+        return {"stage": 4, "experts": [], "loss": False, "target": "fut"}
+    ex = sorted(rng.sample(range(3), rng.randint(1, 3))) if stage == 4 else [0, 1, 2]
+    target = "cur" if (stage == 1 and S1_TARGET == "current") else "fut"
+    return {"stage": stage, "experts": ex, "loss": bool(experts_on), "target": target}
+
+
+def staged_texts(plan, answer):
+    """-> (pads to put right after the current frame in the prompt, question override or None, response)."""
+    st, ex = plan["stage"], plan["experts"]
+    if st == 1:
+        return "".join(_pad(i) for i in ex), None, f"<answer>{answer}</answer>"
+    if st == 2:
+        names = ", ".join(EXPERTS[i][3] for i in ex)
+        return "", f"What is the {names} of the future frame?", "".join(_pad(i) for i in ex) + "\n"
+    if not ex:
+        return "", None, f"<answer>{answer}</answer>"
+    parts = [f"the {EXPERTS[i][3]} of the future frame is {_pad(i)}" for i in ex]
+    s = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + ", and " + parts[-1]
+    return "", None, f"<think> Because {s}. </think>\n<answer> {answer} </answer>"
 
 
 # ----------------------------------------------------------------------------- losses (from CoVT)
@@ -279,6 +348,53 @@ class FCoVTLoss:
         if n_steps:
             total = total / n_steps
             parts = {k: v / n_steps for k, v in parts.items()}
+        return GAMMA * total, parts
+
+    def staged(self, hidden, input_ids, metas):
+        """Row F expert losses: tokens found by type anywhere in the sequence (prompt in stage 1, response after).
+        Target frame = current (stage 1, CoVT-exact) or the first future frame. Heads read the CURRENT frame's
+        SAM embedding / depth features, as in rows E."""
+        dev = hidden.device
+        if self.experts is None:
+            self.experts = Experts(dev)
+        parts, total, n = {}, hidden.new_zeros(()), 0
+        for b, meta in enumerate(metas):
+            p = meta.get("plan") or {}
+            parts["train/stage"] = float(p.get("stage", 0))
+            if not p.get("loss") or not p.get("experts"):
+                continue
+            k = meta["cur"] if p["target"] == "cur" else (meta["fut"] or [None])[0]
+            if k is None:
+                continue
+            ids, h = input_ids[b], hidden[b]
+            cur = _load_img(meta["frames_dir"], meta["cur"])
+            tgt = cur if k == meta["cur"] else _load_img(meta["frames_dir"], k)
+            step, used = hidden.new_zeros(()), 0
+            for i in p["experts"]:
+                name, tok, num, _ = EXPERTS[i]
+                hs = h[ids == self.ids[tok]]
+                if hs.shape[0] != num:
+                    continue
+                if name == "seg":
+                    mp = os.path.join(meta["frames_dir"].replace("/frames/", "/sam_masks/"), f"f{k}.npz")
+                    if not os.path.exists(mp):
+                        parts["train/seg_missing"] = parts.get("train/seg_missing", 0.0) + 1
+                        continue
+                    pm = self.experts.sam_decode(self.experts.sam_embed(cur), self.heads.sam_prompts(hs))
+                    l = sam_token_loss(pm, _load_masks(meta["frames_dir"], k, dev)) * W_SEG
+                elif name == "depth":
+                    cf, phw, _ = self.experts.depth_feats(cur)
+                    _, _, d_gt = self.experts.depth_feats(tgt)
+                    l = F.l1_loss(self.experts.depth_from_tokens(self.heads.depth_tokens(hs), cf, phw), d_gt) * 0.005 * W_DEP
+                else:
+                    l = F.mse_loss(self.heads.dino_pred(hs).float(), self.experts.dino_feats(tgt).float()) * 0.5 * W_DINO
+                parts[f"train/{name}_loss"] = parts.get(f"train/{name}_loss", 0.0) + float(l.detach())
+                step, used = step + l, used + 1
+            if used:
+                total, n = total + step, n + 1
+        if n:
+            total = total / n
+            parts = {k: (v / n if k.endswith("_loss") else v) for k, v in parts.items()}
         return GAMMA * total, parts
 
     @torch.no_grad()

@@ -1,0 +1,167 @@
+--- a/src/dataset/twiff_sft_dataset.py
++++ b/src/dataset/twiff_sft_dataset.py
+@@ -391,8 +391,8 @@
+     GPT-turn text segments are wrapped with <reason>...</reason> tags.
+     """
+     mode = (response_mode or "twiff").strip().lower()
+-    if mode not in {"twiff", "cot", "answer", "fcovt", "fcovt_generic"}:
+-        raise ValueError(f"Unsupported response_mode: {response_mode}. Expected one of: twiff, cot, answer, fcovt, fcovt_generic.")
++    if mode not in {"twiff", "cot", "answer", "fcovt", "fcovt_generic", "fcovt_staged"}:
++        raise ValueError(f"Unsupported response_mode: {response_mode}. Expected one of: twiff, cot, answer, fcovt, fcovt_generic, fcovt_staged.")
+ 
+     video_path = example.get("video", "")
+     image_indices = list(example.get("image", []))
+@@ -477,7 +477,24 @@
+         reasoning_text = gpt_turn.get("value", "") if gpt_turn else ""
+     final_answer = (example.get("answer", "") or "").strip()
+ 
+-    if mode in ("fcovt", "fcovt_generic"):
++    if mode == "fcovt_staged":
++        # [F-CoVT] row F: CoVT's 4-stage curriculum; the per-sample plan comes from the collator (example["_fc"])
++        import sys as _sys
++        _sys.path.insert(0, os.environ.get("FCOVT_CODE", "/workspace/F-CoVT/runs/fcovt"))
++        from fcovt_core import staged_texts
++        if not final_answer:
++            return None
++        plan = example.get("_fc") or {"stage": 3, "experts": [0, 1, 2]}
++        prompt_pads, q_override, response = staged_texts(plan, final_answer)
++        if q_override is not None:  # stage 2: keep the frames, replace the question
++            user_content = [c for c in user_content if c["type"] == "image"
++                            or c.get("text") in ("Earlier frames (oldest first):", "Current frame:")]
++            user_content.append({"type": "text", "text": q_override})
++        if prompt_pads:  # stage 1: thought tokens right after the current frame (CoVT: after <|vision_end|>)
++            last_img = max(i for i, c in enumerate(user_content) if c["type"] == "image")
++            user_content.insert(last_img + 1, {"type": "text", "text": prompt_pads})
++        assistant_content.append({"type": "text", "text": response})
++    elif mode in ("fcovt", "fcovt_generic"):
+         # [F-CoVT] rows E / D: future thought tokens (supervised in the trainer), then the answer
+         import sys as _sys
+         _sys.path.insert(0, os.environ.get("FCOVT_CODE", "/workspace/F-CoVT/runs/fcovt"))
+@@ -618,6 +635,13 @@
+         self._debug_ce_batches_left -= 1
+ 
+     def _collate_twiff_frames(self, raw_examples):
++        _fcm = os.environ.get("FCOVT_RESPONSE_MODE") or ""
++        if _fcm == "fcovt_staged":  # [F-CoVT] row F: stage from the trainer's step file, per-sample plan
++            import sys as _sys
++            _sys.path.insert(0, os.environ.get("FCOVT_CODE", "/workspace/F-CoVT/runs/fcovt"))
++            import fcovt_core as _fc
++            _st, _on = _fc.current_stage()
++            raw_examples = [dict(r, _fc=_fc.sample_plan(_st, _on, random)) for r in raw_examples]
+         examples = [
+             twiff_cot_preprocess_function(
+                 ex,
+@@ -633,7 +657,8 @@
+         ]
+         # [F-CoVT] keep per-sample frame info aligned with the kept examples (for the expert losses)
+         fcovt_metas = [{"frames_dir": r.get("video", ""), "cur": int((r.get("image") or [1])[-1]),
+-                        "fut": [int(k) for k in (r.get("reasoning_image") or [])]} for r in raw_examples]
++                        "fut": [int(k) for k in (r.get("reasoning_image") or [])], "plan": r.get("_fc")}
++                       for r in raw_examples]
+         keep = [i for i, e in enumerate(examples) if e is not None]
+         examples = [examples[i] for i in keep]
+         fcovt_metas = [fcovt_metas[i] for i in keep]
+@@ -641,6 +666,13 @@
+             return {}
+ 
+         texts = [self.processor.apply_chat_template(ex, tokenize=False) for ex in examples]
++        if _fcm == "fcovt_staged":  # [F-CoVT] print one sample each time the stage changes (worker 0 only)
++            import torch.utils.data as _tud
++            _w = _tud.get_worker_info()
++            if (_w is None or _w.id == 0) and getattr(self, "_fc_last", None) != (_st, _on):
++                self._fc_last = (_st, _on)
++                print(f"\n[F-CoVT staged] stage {_st}, expert loss {'on' if _on else 'off'}, plan {fcovt_metas[0]['plan']}"
++                      f"\n{texts[0][-900:]}\n", flush=True)
+ 
+         merge_latent = bool(getattr(self.args, "merge_latent_segments", False))
+         if merge_latent:
+--- a/src/train/train.py
++++ b/src/train/train.py
+@@ -248,8 +248,13 @@
+     if FCOVT_TOKEN_IDS:  # [F-CoVT] heads live on the base model so the optimizer sees them; not part of the LoRA adapter
+         _base = model.get_base_model() if hasattr(model, "get_base_model") else model
+         _hidden = getattr(getattr(_base.config, "text_config", None), "hidden_size", None) or _base.config.hidden_size
+-        _base.fcovt_heads = fcovt_core.build_heads("fcovt" if fcovt_mode == "fcovt" else "generic", _hidden).to(dtype=compute_dtype)
++        _fc_kind = {"fcovt": "fcovt", "fcovt_generic": "generic", "fcovt_staged": "staged"}[fcovt_mode]
++        _base.fcovt_heads = fcovt_core.build_heads(_fc_kind, _hidden).to(dtype=compute_dtype)
+         fcovt_heads = _base.fcovt_heads
++        if _fc_kind == "staged":  # [F-CoVT] row F: output rows start at the mean real-token lm_head row
++            with torch.no_grad():
++                _lm = _base.get_output_embeddings().weight
++                fcovt_heads.out_rows.copy_(_lm[:latent_id].float().mean(0, keepdim=True).expand_as(fcovt_heads.out_rows))
+         print(f"[F-CoVT] mode={fcovt_mode} heads params: {sum(p.numel() for p in fcovt_heads.parameters()):,}")
+ 
+     # configure latent loss type
+@@ -275,7 +280,18 @@
+         **data_module
+     )
+     if fcovt_heads is not None:
+-        trainer.fcovt = fcovt_core.FCoVTLoss("fcovt" if fcovt_mode == "fcovt" else "generic", fcovt_heads, processor)
++        trainer.fcovt = fcovt_core.FCoVTLoss(_fc_kind, fcovt_heads, processor)
++        if _fc_kind == "staged":  # [F-CoVT] row F: tell the dataloader workers the current step
++            from transformers import TrainerCallback
++
++            class _FcStep(TrainerCallback):
++                def on_train_begin(self, args, state, control, **kw):
++                    fcovt_core.write_step(state.global_step, state.max_steps)
++
++                def on_step_begin(self, args, state, control, **kw):
++                    fcovt_core.write_step(state.global_step, state.max_steps)
++
++            trainer.add_callback(_FcStep())
+ 
+     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
+         trainer.train(resume_from_checkpoint=True)
+--- a/src/trainer/future_l1_trainer.py
++++ b/src/trainer/future_l1_trainer.py
+@@ -87,6 +87,34 @@
+         and report auxiliary losses via HF Trainer logging (e.g. W&B).
+         """
+         fcovt_meta = inputs.pop("fcovt_meta", None)  # [F-CoVT]
++        if fcovt_meta is not None and getattr(self, "fcovt", None) is not None and self.fcovt.mode == "staged":
++            # row F (CoVT curriculum): thought tokens ARE predicted (CoVT keeps them in the labels). Their
++            # logits come from the trainable heads.out_rows, every other logit from the frozen lm_head.
++            labels = inputs.pop("labels")
++            outputs = model(**inputs, output_hidden_states=True)
++            h = outputs.hidden_states[-1]
++            if not hasattr(self, "_fc_norm"):  # is hidden_states[-1] the final-normed state the lm_head sees?
++                _b = model
++                while hasattr(_b, "module"):
++                    _b = _b.module
++                _b = _b.get_base_model() if hasattr(_b, "get_base_model") else _b
++                with torch.no_grad():
++                    gap = (_b.lm_head(h[:, -1:]).float() - outputs.logits[:, -1:].float()).abs().max().item()
++                self._fc_norm = None if gap < 1e-2 else _b.model.language_model.norm
++                print(f"[F-CoVT staged] lm_head(hidden[-1]) vs logits gap {gap:.2e} -> "
++                      f"{'apply final norm' if self._fc_norm is not None else 'ok'}", flush=True)
++            if self._fc_norm is not None:
++                h = self._fc_norm(h)
++            tid = torch.tensor(list(self.fcovt.ids.values()), device=h.device)
++            rows = self.fcovt.heads.out_rows
++            logits = outputs.logits.float().index_copy(-1, tid, h.float() @ rows.float().T)
++            ce = torch.nn.functional.cross_entropy(
++                logits[:, :-1].reshape(-1, logits.size(-1)), labels[:, 1:].reshape(-1).to(h.device), ignore_index=-100)
++            extra, parts = self.fcovt.staged(h, inputs["input_ids"], fcovt_meta)
++            loss = ce + extra
++            parts["train/ce_loss"] = float(ce.detach())
++            self._accumulate_step_metrics(parts)
++            return (loss, outputs) if return_outputs else loss
+         if fcovt_meta is not None and getattr(self, "fcovt", None) is not None:
+             # thought tokens are fixed inputs (forced at test time), not something to predict: no CE on them
+             if inputs.get("labels") is not None:
+@@ -218,6 +246,15 @@
+                 ]
+             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
+ 
++            _hlr = os.environ.get("FCOVT_HEAD_LR")  # [F-CoVT] CoVT's projection_layer_lr for the expert heads
++            if _hlr:
++                _hp = [p for n, p in opt_model.named_parameters() if "fcovt_heads" in n and "out_rows" not in n and p.requires_grad]
++                _hid = {id(p) for p in _hp}
++                for g in optimizer_grouped_parameters:
++                    g["params"] = [p for p in g["params"] if id(p) not in _hid]
++                optimizer_grouped_parameters.append({"params": _hp, "weight_decay": self.args.weight_decay, "lr": float(_hlr)})
++                print(f"[F-CoVT] expert heads: {sum(p.numel() for p in _hp):,} params at lr {_hlr}", flush=True)
++
+             self.optimizer = optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs)
+             if optimizer_cls.__name__ == "Adam8bit":
+                 import bitsandbytes

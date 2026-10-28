@@ -29,6 +29,12 @@ if "<|fcovt_start|>" in tok.get_vocab():
         emb[ids] = emb[:latent_id].float().mean(0, keepdim=True).to(emb.dtype)
     print(f"set {len(ids)} F-CoVT thought-token embeddings to the mean of rows [0, {latent_id})")
 model = PeftModel.from_pretrained(base, adapter).merge_and_unload()
+# row F: the thought tokens' OUTPUT rows were trained as heads.out_rows (so the model can write them itself)
+hp = os.path.join(run, "fcovt_heads.pt")
+if os.path.exists(hp) and "out_rows" in (sd := torch.load(hp, map_location="cpu")):
+    with torch.no_grad():
+        model.get_output_embeddings().weight[ids] = sd["out_rows"].to(model.get_output_embeddings().weight.dtype)
+    print(f"set {len(ids)} F-CoVT thought-token lm_head rows from fcovt_heads.pt (row F)")
 model.save_pretrained(out, safe_serialization=True)
 proc.save_pretrained(out)
 print("merged", adapter, "->", out)
