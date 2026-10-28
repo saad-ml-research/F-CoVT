@@ -1,0 +1,33 @@
+--- a/src/trainer/future_l1_trainer.py
++++ b/src/trainer/future_l1_trainer.py
+@@ -91,7 +91,11 @@
+             # row F (CoVT curriculum): thought tokens ARE predicted (CoVT keeps them in the labels). Their
+             # logits come from the trainable heads.out_rows, every other logit from the frozen lm_head.
+             labels = inputs.pop("labels")
++            _dbg = getattr(self, "_fc_dbg", 0) < 4  # diagnostic: also let Future-L1 compute its own CE
++            if _dbg:
++                inputs["labels"] = labels
+             outputs = model(**inputs, output_hidden_states=True)
++            inputs.pop("labels", None)
+             h = outputs.hidden_states[-1]
+             if not hasattr(self, "_fc_norm"):  # is hidden_states[-1] the final-normed state the lm_head sees?
+                 _b = model
+@@ -113,6 +117,18 @@
+             logits = outputs.logits.float().index_copy(-1, tid, h.float() @ rows.float().T)
+             ce = torch.nn.functional.cross_entropy(
+                 logits[:, :-1].reshape(-1, logits.size(-1)), labels[:, 1:].reshape(-1).to(h.device), ignore_index=-100)
++            if _dbg:
++                self._fc_dbg = getattr(self, "_fc_dbg", 0) + 1
++                _tok = self.fcovt.processor.tokenizer
++                _m = labels[0, 1:].to(h.device) != -100
++                _tgt = labels[0, 1:].to(h.device)[_m]
++                _fl1 = getattr(outputs, "ce_loss", None)
++                print(f"[F-CoVT dbg] stage {fcovt_meta[0].get('plan', {}).get('stage')} | my CE {ce.item():.3f} | "
++                      f"Future-L1 CE {(_fl1.item() if _fl1 is not None else float('nan')):.3f} | targets {int(_m.sum())} | "
++                      f"seq {labels.shape[1]} vs logits {outputs.logits.shape[1]}\n"
++                      f"   target : {_tok.decode(_tgt[:30])!r}\n"
++                      f"   argmax : {_tok.decode(logits[0, :-1][_m].argmax(-1)[:30])!r}\n"
++                      f"   base am: {_tok.decode(outputs.logits[0, :-1][_m].argmax(-1)[:30])!r}", flush=True)
+             extra, parts = self.fcovt.staged(h, inputs["input_ids"], fcovt_meta)
+             loss = ce + extra
+             parts["train/ce_loss"] = float(ce.detach())
