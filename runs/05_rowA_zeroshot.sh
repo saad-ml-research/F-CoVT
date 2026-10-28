@@ -8,6 +8,8 @@ FB_DATA=${FB_DATA:-/workspace/data/futurebench/hf}; FB_VIDEOS=${FB_VIDEOS:-/work
 MODEL=${MODEL:-Qwen/Qwen2.5-VL-7B-Instruct}
 TAG=${TAG:-rowA}
 TASKS=${TASKS:-"futurebench futurebench_future_l1"}
+MAXPIX=${MAXPIX:-$((256*28*28))}   # MAXPIX=1605632: Future-L1's eval default (8x our usual 200,704)
+[ "$MAXPIX" != "$((256*28*28))" ] && TAG="${TAG}_px${MAXPIX}"
 LIMIT_ARG=""; [ -n "$LIMIT" ] && LIMIT_ARG="--limit $LIMIT" && TAG="${TAG}_limit${LIMIT}"
 source /workspace/envs/fl1/bin/activate
 export HF_HOME=/workspace/hf
@@ -18,7 +20,7 @@ done
 cd /workspace/Future-L1/lmms-eval
 for task in $TASKS; do
   python -m lmms_eval --model qwen2_5_vl \
-    --model_args pretrained=${MODEL},use_flash_attention_2=True,max_num_frames=32,max_pixels=$((256*28*28)) \
+    --model_args pretrained=${MODEL},use_flash_attention_2=True,max_num_frames=32,max_pixels=${MAXPIX} \
     --tasks $task --batch_size 1 --log_samples $LIMIT_ARG \
     --output_path /workspace/outputs/eval_${TAG}_${task} 2>&1 | tee /workspace/F-CoVT/logs/05_${TAG}_${task}.log
 done
