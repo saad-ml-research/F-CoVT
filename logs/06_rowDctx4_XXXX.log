@@ -1,0 +1,96 @@
+⚙️  Running in WANDB offline mode
+df: /root/.triton/autotune: No such file or directory
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:  20%|██        | 1/5 [00:00<00:03,  1.05it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:01<00:02,  1.40it/s]Loading checkpoint shards:  60%|██████    | 3/5 [00:02<00:01,  1.58it/s]Loading checkpoint shards:  80%|████████  | 4/5 [00:02<00:00,  1.69it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  2.34it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  1.85it/s]
+The image processor of type `Qwen2VLImageProcessor` is now loaded as a fast processor by default, even if the model checkpoint was saved with a slow processor. This is a breaking change and may produce slightly different outputs. To continue using the slow processor, instantiate this class with `use_fast=False`. Note that this behavior will be extended to all models in a future release.
+trainable params: 40,380,928 || all params: 8,332,547,584 || trainable%: 0.4846
+[F-CoVT] mode=fcovt_generic heads params: 11,608,576
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+WARNING:accelerate.accelerator:Gradient accumulation steps mismatch: GradientAccumulationPlugin has 1, DeepSpeed config has 16. Using DeepSpeed's value.
+  0%|          | 0/617 [00:00<?, ?it/s]`loss_type=None` was set in the config but it is unrecognized. Using the default loss: `ForCausalLMLoss`.
+  0%|          | 1/617 [00:31<5:20:52, 31.25s/it]                                                 {'train/ce_loss': 3.06689116358757, 'train/generic_loss': 0.24990674434229732, 'epoch': 0.0}
+  0%|          | 1/617 [00:33<5:20:52, 31.25s/it]  0%|          | 2/617 [00:57<4:52:37, 28.55s/it]                                                 {'train/ce_loss': 3.519200436770916, 'train/generic_loss': 0.2499140128493309, 'epoch': 0.0}
+  0%|          | 2/617 [00:58<4:52:37, 28.55s/it]  0%|          | 3/617 [01:27<4:58:08, 29.13s/it]                                                 {'train/ce_loss': 3.576880633831024, 'train/generic_loss': 0.2499356558546424, 'epoch': 0.0}
+  0%|          | 3/617 [01:29<4:58:08, 29.13s/it]  1%|          | 4/617 [01:56<4:55:52, 28.96s/it]                                                 {'train/ce_loss': 4.119133338332176, 'train/generic_loss': 0.24991341633722186, 'epoch': 0.01}
+  1%|          | 4/617 [01:57<4:55:52, 28.96s/it]  1%|          | 5/617 [02:23<4:48:54, 28.32s/it]                                                 {'loss': 7.8249, 'grad_norm': 14.888521194458008, 'learning_rate': 6.451612903225806e-06, 'epoch': 0.01}
+  1%|          | 5/617 [02:23<4:48:54, 28.32s/it]                                                 {'train/ce_loss': 4.030662029981613, 'train/generic_loss': 0.2499214941635728, 'epoch': 0.01}
+  1%|          | 5/617 [02:24<4:48:54, 28.32s/it]  1%|          | 6/617 [02:49<4:39:02, 27.40s/it]                                                 {'train/ce_loss': 3.3754885122179985, 'train/generic_loss': 0.24990507122129202, 'epoch': 0.01}
+  1%|          | 6/617 [02:50<4:39:02, 27.40s/it]  1%|          | 7/617 [03:16<4:37:33, 27.30s/it]                                                 {'train/ce_loss': 3.549886554479599, 'train/generic_loss': 0.2498606932349503, 'epoch': 0.01}
+  1%|          | 7/617 [03:17<4:37:33, 27.30s/it]  1%|▏         | 8/617 [03:41<4:31:35, 26.76s/it]                                                 {'train/ce_loss': 3.071852594614029, 'train/generic_loss': 0.24986017076298594, 'epoch': 0.01}
+  1%|▏         | 8/617 [03:42<4:31:35, 26.76s/it]  1%|▏         | 9/617 [04:05<4:21:23, 25.80s/it]                                                 {'train/ce_loss': 2.9860492795705795, 'train/generic_loss': 0.24980693543329835, 'epoch': 0.01}
+  1%|▏         | 9/617 [04:06<4:21:23, 25.80s/it]  2%|▏         | 10/617 [04:33<4:28:45, 26.57s/it]                                                  {'loss': 7.0171, 'grad_norm': 8.262935638427734, 'learning_rate': 1.4516129032258066e-05, 'epoch': 0.02}
+  2%|▏         | 10/617 [04:33<4:28:45, 26.57s/it]                                                  {'train/ce_loss': 3.310293287038803, 'train/generic_loss': 0.2498195650987327, 'epoch': 0.02}
+  2%|▏         | 10/617 [04:34<4:28:45, 26.57s/it]  2%|▏         | 11/617 [05:01<4:32:48, 27.01s/it]W1027 13:55:20.668000 208 torch/distributed/elastic/agent/server/api.py:719] Received Signals.SIGINT death signal, shutting down workers
+W1027 13:55:20.771000 208 torch/distributed/elastic/multiprocessing/api.py:897] Sending process 277 closing signal SIGINT
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/workspace/Future-L1/src/train/train.py", line 295, in <module>
+[rank0]:     train()
+[rank0]:   File "/workspace/Future-L1/src/train/train.py", line 283, in train
+[rank0]:     trainer.train()
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/transformers/trainer.py", line 2325, in train
+[rank0]:     return inner_training_loop(
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/transformers/trainer.py", line 2674, in _inner_training_loop
+[rank0]:     tr_loss_step = self.training_step(model, inputs, num_items_in_batch)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/transformers/trainer.py", line 4020, in training_step
+[rank0]:     loss = self.compute_loss(model, inputs, num_items_in_batch=num_items_in_batch)
+[rank0]:   File "/workspace/Future-L1/src/trainer/future_l1_trainer.py", line 96, in compute_loss
+[rank0]:     extra, parts = self.fcovt(model, outputs.hidden_states[-1], inputs["input_ids"], fcovt_meta)
+[rank0]:   File "/workspace/F-CoVT/runs/fcovt/fcovt_core.py", line 273, in __call__
+[rank0]:     tgt = self._qwen_target(model, fut, dev)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+[rank0]:     return func(*args, **kwargs)
+[rank0]:   File "/workspace/F-CoVT/runs/fcovt/fcovt_core.py", line 289, in _qwen_target
+[rank0]:     feats = base.model.get_image_features(pv, ip["image_grid_thw"].to(dev))
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/transformers/models/qwen2_5_vl/modeling_qwen2_5_vl.py", line 1170, in get_image_features
+[rank0]:     image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/transformers/models/qwen2_5_vl/modeling_qwen2_5_vl.py", line 453, in forward
+[rank0]:     hidden_states = blk(
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/transformers/modeling_layers.py", line 93, in __call__
+[rank0]:     return self._gradient_checkpointing_func(partial(super().__call__, **kwargs), *args)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/_compile.py", line 32, in inner
+[rank0]:     return disable_fn(*args, **kwargs)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 745, in _fn
+[rank0]:     return fn(*args, **kwargs)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/utils/checkpoint.py", line 496, in checkpoint
+[rank0]:     ret = function(*args, **kwargs)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/transformers/models/qwen2_5_vl/modeling_qwen2_5_vl.py", line 282, in forward
+[rank0]:     self.norm1(hidden_states),
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:   File "/workspace/envs/fl1/lib/python3.10/site-packages/transformers/models/qwen2/modeling_qwen2.py", line 200, in forward
+[rank0]:     hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
+[rank0]: KeyboardInterrupt
+  2%|▏         | 11/617 [05:03<4:38:25, 27.57s/it]
+[rank0]:[W1027 13:55:21.344417043 ProcessGroupNCCL.cpp:1496] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+Traceback (most recent call last):
+  File "/workspace/envs/fl1/bin/torchrun", line 10, in <module>
+    sys.exit(main())
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 355, in wrapper
+    return f(*args, **kwargs)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/run.py", line 918, in main
+    run(args)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/run.py", line 909, in run
+    elastic_launch(
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 138, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 260, in launch_agent
+    result = agent.run()
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/elastic/metrics/api.py", line 137, in wrapper
+    result = f(*args, **kwargs)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/elastic/agent/server/api.py", line 711, in run
+    result = self._invoke_run(role)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/elastic/agent/server/api.py", line 870, in _invoke_run
+    time.sleep(monitor_interval)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/elastic/multiprocessing/api.py", line 84, in _terminate_process_handler
+    raise SignalException(f"Process {os.getpid()} got signal: {sigval}", sigval=sigval)
+torch.distributed.elastic.multiprocessing.api.SignalException: Process 208 got signal: 2

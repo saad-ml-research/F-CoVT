@@ -1,0 +1,92 @@
+⚙️  Running in WANDB offline mode
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:00<00:00, 17.83it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:00<00:00, 33.80it/s]
+The image processor of type `Qwen2VLImageProcessor` is now loaded as a fast processor by default, even if the model checkpoint was saved with a slow processor. This is a breaking change and may produce slightly different outputs. To continue using the slow processor, instantiate this class with `use_fast=False`. Note that this behavior will be extended to all models in a future release.
+trainable params: 40,380,928 || all params: 8,332,547,584 || trainable%: 0.4846
+[F-CoVT] mode=fcovt_staged heads params: 26,643,200
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+[F-CoVT] expert heads: 26,621,696 params at lr 1e-5
+  0%|          | 0/12 [00:00<?, ?it/s]
+[F-CoVT staged] stage 1, expert loss on, plan {'stage': 1, 'experts': [], 'loss': False, 'target': 'fut'}
+<|im_start|>system
+You are a helpful assistant.<|im_end|>
+<|im_start|>user
+frame_1<|vision_start|><|image_pad|><|vision_end|>Will the weather conditions remain clear as the rider continues along the path in frame_1?<|im_end|>
+<|im_start|>assistant
+<answer>The weather conditions are likely to change and become dusty and hazy as the rider continues along the path.</answer><|im_end|>
+
+
+`loss_type=None` was set in the config but it is unrecognized. Using the default loss: `ForCausalLMLoss`.
+[F-CoVT staged] logits gap: hidden[-1] 2.50e-01 | norm(hidden[-1]) 1.31e+01 -> use hidden[-1] as is
+[F-CoVT dbg] stage 1 | my CE 2.940 | Future-L1 CE 2.940 | targets 28 | seq 300 vs logits 300
+   target : '\n<answer>The weather conditions are likely to change and become dusty and hazy as the rider continues along the path.</answer><|im_end|>\n'
+   argmax : '\nBasedframe>\n image conditions in not to remain as become cloudy as hazy as the rider continues along the path inanswer><|im_end|>\n'
+   base am: '\nBasedframe>\n image conditions in not to remain as become cloudy as hazy as the rider continues along the path inanswer><|im_end|>\n'
+WARNING:dinov2:xFormers not available
+WARNING:dinov2:xFormers not available
+Using cache found in /workspace/torch/hub/facebookresearch_dinov2_main
+/workspace/torch/hub/facebookresearch_dinov2_main/dinov2/layers/swiglu_ffn.py:51: UserWarning: xFormers is not available (SwiGLU)
+  warnings.warn("xFormers is not available (SwiGLU)")
+/workspace/torch/hub/facebookresearch_dinov2_main/dinov2/layers/attention.py:33: UserWarning: xFormers is not available (Attention)
+  warnings.warn("xFormers is not available (Attention)")
+/workspace/torch/hub/facebookresearch_dinov2_main/dinov2/layers/block.py:40: UserWarning: xFormers is not available (Block)
+  warnings.warn("xFormers is not available (Block)")
+  8%|▊         | 1/12 [01:53<20:53, 113.92s/it][F-CoVT dbg] stage 1 | my CE 2.302 | Future-L1 CE 2.302 | targets 22 | seq 294 vs logits 294
+   target : "\n<answer>The character's face will become fully visible as the glowing light dissipates.</answer><|im_end|>\n"
+   argmax : "\nBasedframe>\n image's face is likely fully visible as the glowing light dissipates inanswer><|im_end|>\n"
+   base am: "\nBasedframe>\n image's face is likely fully visible as the glowing light dissipates inanswer><|im_end|>\n"
+                                               {'train/ce_loss': 2.9395718574523926, 'train/stage': 1.0, 'epoch': 0.0}
+  8%|▊         | 1/12 [01:54<20:53, 113.92s/it] 17%|█▋        | 2/12 [01:54<07:51, 47.16s/it] [F-CoVT dbg] stage 1 | my CE 1.058 | Future-L1 CE 1.058 | targets 38 | seq 1254 vs logits 1254
+   target : "\n<answer>The main demand of the nurses' protest in Gishu County is the establishment of a Health Service Commission and the support for devolution"
+   argmax : " TheThepoints> main demand of the nurses' protest in Gishu County is the creation of a Health Service Commission. the support of devolution"
+   base am: " TheThepoints> main demand of the nurses' protest in Gishu County is the creation of a Health Service Commission. the support of devolution"
+                                              {'train/ce_loss': 2.301568031311035, 'train/stage': 1.0, 'epoch': 0.0}
+ 17%|█▋        | 2/12 [01:54<07:51, 47.16s/it] 25%|██▌       | 3/12 [01:54<03:52, 25.87s/it][F-CoVT dbg] stage 1 | my CE 2.505 | Future-L1 CE 2.505 | targets 26 | seq 296 vs logits 296
+   target : '\n<answer>The new safety feature being highlighted and demonstrated is the improved seatbelt mechanism on the school bus.</answer><|im_end|>\n'
+   argmax : '\nThepoints>\n video safety feature being highlighted and demonstrated in the " visibility belts system, the school bus.answer><|im_end|>\n'
+   base am: '\nThepoints>\n video safety feature being highlighted and demonstrated in the " visibility belts system, the school bus.answer><|im_end|>\n'
+                                              {'train/ce_loss': 1.0581260919570923, 'train/stage': 1.0, 'epoch': 0.0}
+ 25%|██▌       | 3/12 [01:55<03:52, 25.87s/it] 33%|███▎      | 4/12 [01:55<02:06, 15.82s/it]                                              {'train/ce_loss': 2.5049567222595215, 'train/stage': 1.0, 'epoch': 0.0}
+ 33%|███▎      | 4/12 [01:55<02:06, 15.82s/it] 42%|████▏     | 5/12 [01:55<01:11, 10.27s/it]                                              {'loss': 2.264, 'grad_norm': 7.221889972686768, 'learning_rate': 4.137151834863213e-05, 'epoch': 0.0}
+ 42%|████▏     | 5/12 [01:55<01:11, 10.27s/it]                                              {'train/ce_loss': 2.515589952468872, 'train/stage': 1.0, 'epoch': 0.0}
+ 42%|████▏     | 5/12 [01:55<01:11, 10.27s/it] 50%|█████     | 6/12 [01:56<00:41,  6.95s/it]
+[F-CoVT staged] stage 2, expert loss on, plan {'stage': 2, 'experts': [], 'loss': False, 'target': 'fut'}
+<|im_start|>system
+You are a helpful assistant.<|im_end|>
+<|im_start|>user
+<|vision_start|><|image_pad|><|vision_end|>What is the  of the future frame?<|im_end|>
+<|im_start|>assistant
+
+<|im_end|>
+
+
+                                              {'train/ce_loss': 1.1893454790115356, 'train/stage': 1.0, 'epoch': 0.0}
+ 50%|█████     | 6/12 [01:56<00:41,  6.95s/it] 58%|█████▊    | 7/12 [01:56<00:24,  4.81s/it]                                              {'train/ce_loss': 2.079531669616699, 'train/stage': 1.0, 'epoch': 0.0}
+ 58%|█████▊    | 7/12 [01:56<00:24,  4.81s/it] 67%|██████▋   | 8/12 [01:57<00:13,  3.42s/it]
+[F-CoVT staged] stage 3, expert loss on, plan {'stage': 3, 'experts': [], 'loss': False, 'target': 'fut'}
+<|im_start|>system
+You are a helpful assistant.<|im_end|>
+<|im_start|>user
+frame_1<|vision_start|><|image_pad|><|vision_end|>What is the man in the suit and red tie explaining in the video?<|im_end|>
+<|im_start|>assistant
+<answer>The man is explaining what executive orders are.</answer><|im_end|>
+
+
+                                              {'train/ce_loss': 1.460904598236084, 'train/stage': 1.0, 'epoch': 0.0}
+ 67%|██████▋   | 8/12 [01:57<00:13,  3.42s/it] 75%|███████▌  | 9/12 [01:57<00:07,  2.48s/it]                                              {'train/ce_loss': 2.1014039516448975, 'train/stage': 1.0, 'epoch': 0.0}
+ 75%|███████▌  | 9/12 [01:57<00:07,  2.48s/it] 83%|████████▎ | 10/12 [01:57<00:03,  1.84s/it]                                               {'loss': 3.7682, 'grad_norm': 41.79594802856445, 'learning_rate': 8.628481651367876e-06, 'epoch': 0.0}
+ 83%|████████▎ | 10/12 [01:57<00:03,  1.84s/it]
+[F-CoVT staged] stage 4, expert loss on, plan {'stage': 4, 'experts': [], 'loss': False, 'target': 'fut'}
+<|im_start|>system
+You are a helpful assistant.<|im_end|>
+<|im_start|>user
+frame_1<|vision_start|><|image_pad|><|vision_end|>How should the camera move to emphasize the car's design and features, starting from the rear view in frame_1?<|im_end|>
+<|im_start|>assistant
+<answer>The camera should pan around the car, starting from the rear view, moving to the side profile, and then to the front view, to emphasize the car's design and features.</answer><|im_end|>
+
+
+                                               {'train/ce_loss': 12.009730339050293, 'train/stage': 2.0, 'epoch': 0.0}
+ 83%|████████▎ | 10/12 [01:58<00:03,  1.84s/it] 92%|█████████▏| 11/12 [01:58<00:01,  1.41s/it]                                               {'train/ce_loss': 11.175090789794922, 'train/stage': 2.0, 'epoch': 0.0}
+ 92%|█████████▏| 11/12 [01:58<00:01,  1.41s/it]100%|██████████| 12/12 [01:58<00:00,  1.11s/it]                                               {'train_runtime': 130.2778, 'train_samples_per_second': 0.092, 'train_steps_per_second': 0.092, 'train_loss': 3.681519031524658, 'epoch': 0.0}
+100%|██████████| 12/12 [02:10<00:00,  1.11s/it]100%|██████████| 12/12 [02:10<00:00, 10.86s/it]
+[rank0]:[W1028 06:11:54.816278159 ProcessGroupNCCL.cpp:1496] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())

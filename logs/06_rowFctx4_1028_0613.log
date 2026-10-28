@@ -1,0 +1,93 @@
+⚙️  Running in WANDB offline mode
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:00<00:00, 17.77it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:00<00:00, 32.36it/s]
+The image processor of type `Qwen2VLImageProcessor` is now loaded as a fast processor by default, even if the model checkpoint was saved with a slow processor. This is a breaking change and may produce slightly different outputs. To continue using the slow processor, instantiate this class with `use_fast=False`. Note that this behavior will be extended to all models in a future release.
+trainable params: 40,380,928 || all params: 8,332,547,584 || trainable%: 0.4846
+[F-CoVT] mode=fcovt_staged heads params: 26,643,200
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+[F-CoVT] expert heads: 26,621,696 params at lr 1e-5
+  0%|          | 0/12 [00:00<?, ?it/s]
+[F-CoVT staged] stage 1, expert loss on, plan {'stage': 1, 'experts': [0, 1, 2], 'loss': True, 'target': 'fut'}
+<|im_start|>system
+You are a helpful assistant.<|im_end|>
+<|im_start|>user
+frame_1<|vision_start|><|image_pad|><|vision_end|>Will the weather conditions remain clear as the rider continues along the path in frame_1?<|fcovt_start|><|fcovt_seg|><|fcovt_seg|><|fcovt_seg|><|fcovt_seg|><|fcovt_seg|><|fcovt_seg|><|fcovt_seg|><|fcovt_seg|><|fcovt_end|><|fcovt_start|><|fcovt_depth|><|fcovt_depth|><|fcovt_depth|><|fcovt_depth|><|fcovt_end|><|fcovt_start|><|fcovt_dino|><|fcovt_dino|><|fcovt_dino|><|fcovt_dino|><|fcovt_end|><|im_end|>
+<|im_start|>assistant
+<answer>The weather conditions are likely to change and become dusty and hazy as the rider continues along the path.</answer><|im_end|>
+
+
+`loss_type=None` was set in the config but it is unrecognized. Using the default loss: `ForCausalLMLoss`.
+[F-CoVT staged] logits gap: hidden[-1] 6.25e-02 | norm(hidden[-1]) 1.28e+01 -> use hidden[-1] as is
+[F-CoVT dbg] stage 1 | my CE 7.765 | Future-L1 CE 7.765 | targets 28 | seq 322 vs logits 322
+   target : '\n<answer>The weather conditions are likely to change and become dusty and hazy as the rider continues along the path.</answer><|im_end|>\n'
+   argmax : '\n<|im_end|>jspb<|im_end|><|im_start|> conditions in not to remain<|im_end|> the<|im_end|><|im_end|><|im_end|><|im_end|><|im_end|> h h continues along the path in<|im_end|><|im_end|><|im_end|>\n'
+   base am: '\n<|im_end|>jspb<|im_end|><|im_start|> conditions in not to remain<|im_end|> the<|im_end|><|im_end|><|im_end|><|im_end|><|im_end|> h h continues along the path in<|im_end|><|im_end|><|im_end|>\n'
+WARNING:dinov2:xFormers not available
+WARNING:dinov2:xFormers not available
+Using cache found in /workspace/torch/hub/facebookresearch_dinov2_main
+/workspace/torch/hub/facebookresearch_dinov2_main/dinov2/layers/swiglu_ffn.py:51: UserWarning: xFormers is not available (SwiGLU)
+  warnings.warn("xFormers is not available (SwiGLU)")
+/workspace/torch/hub/facebookresearch_dinov2_main/dinov2/layers/attention.py:33: UserWarning: xFormers is not available (Attention)
+  warnings.warn("xFormers is not available (Attention)")
+/workspace/torch/hub/facebookresearch_dinov2_main/dinov2/layers/block.py:40: UserWarning: xFormers is not available (Block)
+  warnings.warn("xFormers is not available (Block)")
+  8%|▊         | 1/12 [01:56<21:22, 116.55s/it][F-CoVT dbg] stage 1 | my CE 8.102 | Future-L1 CE 8.102 | targets 22 | seq 316 vs logits 316
+   target : "\n<answer>The character's face will become fully visible as the glowing light dissipates.</answer><|im_end|>\n"
+   argmax : '\n<|im_end|>jspb<|im_end|> addCriterion<|im_end|><|im_end|><|im_end|> not visible visible<|im_end|> the glowing light dissipates<|im_end|><|im_end|><|im_end|><|im_end|><|im_end|>'
+   base am: '\n<|im_end|>jspb<|im_end|> addCriterion<|im_end|><|im_end|><|im_end|> not visible visible<|im_end|> the glowing light dissipates<|im_end|><|im_end|><|im_end|><|im_end|><|im_end|>'
+                                               {'train/ce_loss': 7.764682292938232, 'train/stage': 1.0, 'train/seg_loss': 1.329447627067566, 'train/depth_loss': 0.687481164932251, 'train/dino_loss': 0.9951339960098267, 'epoch': 0.0}
+  8%|▊         | 1/12 [01:56<21:22, 116.55s/it] 17%|█▋        | 2/12 [01:57<08:04, 48.42s/it] [F-CoVT dbg] stage 1 | my CE 2.645 | Future-L1 CE 2.645 | targets 38 | seq 1276 vs logits 1276
+   target : "\n<answer>The main demand of the nurses' protest in Gishu County is the establishment of a Health Service Commission and the support for devolution"
+   argmax : "\n<|im_end|> minden> main demand of the nurses' protest in Gishu County, not implementation of a Health Service Commission.<|im_end|> support of devolution"
+   base am: "\n<|im_end|> minden> main demand of the nurses' protest in Gishu County, not implementation of a Health Service Commission.<|im_end|> support of devolution"
+                                              {'train/ce_loss': 8.101767539978027, 'train/stage': 1.0, 'train/seg_loss': 2.4548072814941406, 'train/depth_loss': 0.5501762628555298, 'train/dino_loss': 0.9775615334510803, 'epoch': 0.0}
+ 17%|█▋        | 2/12 [01:57<08:04, 48.42s/it] 25%|██▌       | 3/12 [01:58<04:00, 26.68s/it][F-CoVT dbg] stage 1 | my CE 6.455 | Future-L1 CE 6.455 | targets 26 | seq 318 vs logits 318
+   target : '\n<answer>The new safety feature being highlighted and demonstrated is the improved seatbelt mechanism on the school bus.</answer><|im_end|>\n'
+   argmax : '\n<|im_end|>.Aggressive<|im_end|> providedsc feature feature highlighted and demonstrated in not " the<|im_end|><|im_end|><|im_end|> the theb<|im_end|><|im_end|><|im_end|><|im_end|>\n'
+   base am: '\n<|im_end|>.Aggressive<|im_end|> providedsc feature feature highlighted and demonstrated in not " the<|im_end|><|im_end|><|im_end|> the theb<|im_end|><|im_end|><|im_end|><|im_end|>\n'
+                                              {'train/ce_loss': 2.645064353942871, 'train/stage': 1.0, 'train/seg_loss': 2.017362356185913, 'train/depth_loss': 1.2142469882965088, 'train/dino_loss': 0.9942513704299927, 'epoch': 0.0}
+ 25%|██▌       | 3/12 [01:58<04:00, 26.68s/it] 33%|███▎      | 4/12 [01:58<02:11, 16.42s/it]                                              {'train/ce_loss': 6.455005168914795, 'train/stage': 1.0, 'train/seg_loss': 1.709851861000061, 'train/depth_loss': 0.7393966317176819, 'train/dino_loss': 1.0365931987762451, 'epoch': 0.0}
+ 33%|███▎      | 4/12 [01:59<02:11, 16.42s/it] 42%|████▏     | 5/12 [01:59<01:15, 10.75s/it]                                              {'loss': 9.7467, 'grad_norm': 270.8277282714844, 'learning_rate': 4.137151834863213e-05, 'epoch': 0.0}
+ 42%|████▏     | 5/12 [01:59<01:15, 10.75s/it]                                              {'train/ce_loss': 5.588709831237793, 'train/stage': 1.0, 'train/seg_loss': 1.9182288646697998, 'train/depth_loss': 0.588159441947937, 'train/dino_loss': 0.9655085206031799, 'epoch': 0.0}
+ 42%|████▏     | 5/12 [01:59<01:15, 10.75s/it] 50%|█████     | 6/12 [02:00<00:44,  7.35s/it]
+[F-CoVT staged] stage 2, expert loss on, plan {'stage': 2, 'experts': [0, 1, 2], 'loss': True, 'target': 'fut'}
+<|im_start|>system
+You are a helpful assistant.<|im_end|>
+<|im_start|>user
+<|vision_start|><|image_pad|><|vision_end|>What is the segmentation, depth map, perception feature of the future frame?<|im_end|>
+<|im_start|>assistant
+<|fcovt_start|><|fcovt_seg|><|fcovt_seg|><|fcovt_seg|><|fcovt_seg|><|fcovt_seg|><|fcovt_seg|><|fcovt_seg|><|fcovt_seg|><|fcovt_end|><|fcovt_start|><|fcovt_depth|><|fcovt_depth|><|fcovt_depth|><|fcovt_depth|><|fcovt_end|><|fcovt_start|><|fcovt_dino|><|fcovt_dino|><|fcovt_dino|><|fcovt_dino|><|fcovt_end|>
+<|im_end|>
+
+
+                                              {'train/ce_loss': 3.159287691116333, 'train/stage': 1.0, 'train/seg_loss': 4.339286804199219, 'train/depth_loss': 1.4140228033065796, 'train/dino_loss': 0.9874922633171082, 'epoch': 0.0}
+ 50%|█████     | 6/12 [02:00<00:44,  7.35s/it] 58%|█████▊    | 7/12 [02:00<00:25,  5.17s/it]                                              {'train/ce_loss': 4.058250427246094, 'train/stage': 1.0, 'train/seg_loss': 1.5380058288574219, 'train/depth_loss': 0.6346811056137085, 'train/dino_loss': 1.0218545198440552, 'epoch': 0.0}
+ 58%|█████▊    | 7/12 [02:01<00:25,  5.17s/it] 67%|██████▋   | 8/12 [02:01<00:14,  3.75s/it]
+[F-CoVT staged] stage 3, expert loss on, plan {'stage': 3, 'experts': [0, 1, 2], 'loss': True, 'target': 'fut'}
+<|im_start|>system
+You are a helpful assistant.<|im_end|>
+<|im_start|>user
+frame_1<|vision_start|><|image_pad|><|vision_end|>What is the man in the suit and red tie explaining in the video?<|im_end|>
+<|im_start|>assistant
+<think> Because the segmentation of the future frame is <|fcovt_start|><|fcovt_seg|><|fcovt_seg|><|fcovt_seg|><|fcovt_seg|><|fcovt_seg|><|fcovt_seg|><|fcovt_seg|><|fcovt_seg|><|fcovt_end|>, the depth map of the future frame is <|fcovt_start|><|fcovt_depth|><|fcovt_depth|><|fcovt_depth|><|fcovt_depth|><|fcovt_end|>, and the perception feature of the future frame is <|fcovt_start|><|fcovt_dino|><|fcovt_dino|><|fcovt_dino|><|fcovt_dino|><|fcovt_end|>. </think>
+<answer> The man is explaining what executive orders are. </answer><|im_end|>
+
+
+                                              {'train/ce_loss': 3.700789213180542, 'train/stage': 1.0, 'train/seg_loss': 1.5168977975845337, 'train/depth_loss': 0.6145933270454407, 'train/dino_loss': 0.9704835414886475, 'epoch': 0.0}
+ 67%|██████▋   | 8/12 [02:02<00:14,  3.75s/it] 75%|███████▌  | 9/12 [02:02<00:08,  2.79s/it]                                              {'train/ce_loss': 4.680736064910889, 'train/stage': 1.0, 'train/seg_loss': 1.5956519842147827, 'train/depth_loss': 0.7285041809082031, 'train/dino_loss': 0.9705323576927185, 'epoch': 0.0}
+ 75%|███████▌  | 9/12 [02:02<00:08,  2.79s/it] 83%|████████▎ | 10/12 [02:03<00:04,  2.15s/it]                                               {'loss': 10.4328, 'grad_norm': 232.4313201904297, 'learning_rate': 8.628481651367876e-06, 'epoch': 0.0}
+ 83%|████████▎ | 10/12 [02:03<00:04,  2.15s/it]
+[F-CoVT staged] stage 4, expert loss on, plan {'stage': 4, 'experts': [], 'loss': False, 'target': 'fut'}
+<|im_start|>system
+You are a helpful assistant.<|im_end|>
+<|im_start|>user
+frame_1<|vision_start|><|image_pad|><|vision_end|>How should the camera move to emphasize the car's design and features, starting from the rear view in frame_1?<|im_end|>
+<|im_start|>assistant
+<answer>The camera should pan around the car, starting from the rear view, moving to the side profile, and then to the front view, to emphasize the car's design and features.</answer><|im_end|>
+
+
+                                               {'train/ce_loss': 17.217763900756836, 'train/stage': 2.0, 'train/seg_loss': 1.6096028089523315, 'train/depth_loss': 0.3972320556640625, 'train/dino_loss': 1.0084503889083862, 'epoch': 0.0}
+ 83%|████████▎ | 10/12 [02:03<00:04,  2.15s/it] 92%|█████████▏| 11/12 [02:03<00:01,  1.70s/it]                                               {'train/ce_loss': 18.01007843017578, 'train/stage': 2.0, 'train/seg_loss': 1.717607021331787, 'train/depth_loss': 0.5908397436141968, 'train/dino_loss': 1.0575778484344482, 'epoch': 0.0}
+ 92%|█████████▏| 11/12 [02:04<00:01,  1.70s/it]100%|██████████| 12/12 [02:04<00:00,  1.40s/it]                                               {'train_runtime': 135.596, 'train_samples_per_second': 0.088, 'train_steps_per_second': 0.088, 'train_loss': 11.191983858744303, 'epoch': 0.0}
+100%|██████████| 12/12 [02:15<00:00,  1.40s/it]100%|██████████| 12/12 [02:15<00:00, 11.30s/it]
+[rank0]:[W1028 06:18:50.676641320 ProcessGroupNCCL.cpp:1496] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())

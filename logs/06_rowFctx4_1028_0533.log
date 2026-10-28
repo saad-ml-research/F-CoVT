@@ -1,0 +1,67 @@
+W1028 05:34:17.870000 186426 torch/distributed/elastic/agent/server/api.py:719] Received Signals.SIGINT death signal, shutting down workers
+W1028 05:34:17.873000 186426 torch/distributed/elastic/multiprocessing/api.py:897] Sending process 186493 closing signal SIGINT
+Traceback (most recent call last):
+  File "/workspace/Future-L1/src/train/train.py", line 5, in <module>
+    from transformers import AutoProcessor, AutoConfig, HfArgumentParser
+  File "<frozen importlib._bootstrap>", line 1075, in _handle_fromlist
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/transformers/utils/import_utils.py", line 2317, in __getattr__
+    module = self._get_module(self._class_to_module[name])
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/transformers/utils/import_utils.py", line 2345, in _get_module
+    return importlib.import_module("." + module_name, self.__name__)
+  File "/usr/lib/python3.10/importlib/__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/transformers/models/auto/processing_auto.py", line 28, in <module>
+    from ...processing_utils import ProcessorMixin
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/transformers/processing_utils.py", line 75, in <module>
+    from .modeling_utils import PreTrainedAudioTokenizerBase
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/transformers/modeling_utils.py", line 56, in <module>
+    from .integrations.flash_paged import paged_attention_forward
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/transformers/integrations/flash_paged.py", line 12, in <module>
+    from flash_attn import flash_attn_varlen_func  # noqa: F401
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/flash_attn/__init__.py", line 3, in <module>
+    from flash_attn.flash_attn_interface import (
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/flash_attn/flash_attn_interface.py", line 82, in <module>
+    def _flash_attn_forward(
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/_library/custom_ops.py", line 126, in inner
+    result = CustomOpDef(namespace, opname, schema_str, fn)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/_library/custom_ops.py", line 174, in __init__
+    self._register_to_dispatcher()
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/_library/custom_ops.py", line 594, in _register_to_dispatcher
+    lib._register_fake(self._name, fake_impl, _stacklevel=4)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/library.py", line 177, in _register_fake
+    source = torch._library.utils.get_source(_stacklevel + 1)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/_library/utils.py", line 53, in get_source
+    frame = inspect.getframeinfo(sys._getframe(stacklevel))
+  File "/usr/lib/python3.10/inspect.py", line 1624, in getframeinfo
+    lines, lnum = findsource(frame)
+  File "/usr/lib/python3.10/inspect.py", line 952, in findsource
+    module = getmodule(object, file)
+  File "/usr/lib/python3.10/inspect.py", line 878, in getmodule
+    os.path.realpath(f)] = module.__name__
+  File "/usr/lib/python3.10/posixpath.py", line 393, in realpath
+    path, ok = _joinrealpath(filename[:0], filename, strict, {})
+  File "/usr/lib/python3.10/posixpath.py", line 437, in _joinrealpath
+    st = os.lstat(newpath)
+KeyboardInterrupt
+Traceback (most recent call last):
+  File "/workspace/envs/fl1/bin/torchrun", line 10, in <module>
+    sys.exit(main())
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 355, in wrapper
+    return f(*args, **kwargs)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/run.py", line 918, in main
+    run(args)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/run.py", line 909, in run
+    elastic_launch(
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 138, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 260, in launch_agent
+    result = agent.run()
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/elastic/metrics/api.py", line 137, in wrapper
+    result = f(*args, **kwargs)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/elastic/agent/server/api.py", line 711, in run
+    result = self._invoke_run(role)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/elastic/agent/server/api.py", line 870, in _invoke_run
+    time.sleep(monitor_interval)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/elastic/multiprocessing/api.py", line 84, in _terminate_process_handler
+    raise SignalException(f"Process {os.getpid()} got signal: {sigval}", sigval=sigval)
+torch.distributed.elastic.multiprocessing.api.SignalException: Process 186426 got signal: 2

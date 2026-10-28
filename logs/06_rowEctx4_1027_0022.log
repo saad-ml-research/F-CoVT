@@ -1,0 +1,52 @@
+⚙️  Running in WANDB offline mode
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:00<00:00, 17.80it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:00<00:00, 33.36it/s]
+The image processor of type `Qwen2VLImageProcessor` is now loaded as a fast processor by default, even if the model checkpoint was saved with a slow processor. This is a breaking change and may produce slightly different outputs. To continue using the slow processor, instantiate this class with `use_fast=False`. Note that this behavior will be extended to all models in a future release.
+trainable params: 40,402,432 || all params: 8,332,569,088 || trainable%: 0.4849
+[F-CoVT] mode=fcovt heads params: 26,621,696
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+WARNING:accelerate.accelerator:Gradient accumulation steps mismatch: GradientAccumulationPlugin has 1, DeepSpeed config has 16. Using DeepSpeed's value.
+  0%|          | 0/10 [00:00<?, ?it/s]`loss_type=None` was set in the config but it is unrecognized. Using the default loss: `ForCausalLMLoss`.
+WARNING:dinov2:xFormers not available
+WARNING:dinov2:xFormers not available
+Using cache found in /workspace/torch/hub/facebookresearch_dinov2_main
+/workspace/torch/hub/facebookresearch_dinov2_main/dinov2/layers/swiglu_ffn.py:51: UserWarning: xFormers is not available (SwiGLU)
+  warnings.warn("xFormers is not available (SwiGLU)")
+/workspace/torch/hub/facebookresearch_dinov2_main/dinov2/layers/attention.py:33: UserWarning: xFormers is not available (Attention)
+  warnings.warn("xFormers is not available (Attention)")
+/workspace/torch/hub/facebookresearch_dinov2_main/dinov2/layers/block.py:40: UserWarning: xFormers is not available (Block)
+  warnings.warn("xFormers is not available (Block)")
+ 10%|█         | 1/10 [02:04<18:37, 124.19s/it]                                               {'train/ce_loss': 1.0579326078295708, 'train/seg_loss': 0.9502214584499598, 'train/depth_loss': 0.4234315869398415, 'train/dino_loss': 0.5028999764472246, 'epoch': 0.0}
+ 10%|█         | 1/10 [02:04<18:37, 124.19s/it] 20%|██        | 2/10 [02:15<07:42, 57.84s/it]                                               {'train/ce_loss': 1.257149014621973, 'train/seg_loss': 0.9568744283169508, 'train/depth_loss': 0.3660644614137709, 'train/dino_loss': 0.5012115053832531, 'epoch': 0.0}
+ 20%|██        | 2/10 [02:16<07:42, 57.84s/it] 30%|███       | 3/10 [02:27<04:18, 36.90s/it]                                              {'train/ce_loss': 1.8148287311196327, 'train/seg_loss': 1.1050071567296982, 'train/depth_loss': 0.4085497453343123, 'train/dino_loss': 0.5121434303000569, 'epoch': 0.0}
+ 30%|███       | 3/10 [02:28<04:18, 36.90s/it] 40%|████      | 4/10 [02:39<02:42, 27.05s/it]                                              {'train/ce_loss': 1.8015241362154484, 'train/seg_loss': 0.7959622219204903, 'train/depth_loss': 0.4575125500559807, 'train/dino_loss': 0.5110935494303703, 'epoch': 0.01}
+ 40%|████      | 4/10 [02:39<02:42, 27.05s/it] 50%|█████     | 5/10 [02:50<01:46, 21.40s/it]                                              {'loss': 4.8933, 'grad_norm': 52.09132766723633, 'learning_rate': 3.7500000000000003e-05, 'epoch': 0.01}
+ 50%|█████     | 5/10 [02:50<01:46, 21.40s/it]                                              {'train/ce_loss': 1.5870359428226948, 'train/seg_loss': 0.9067453723400831, 'train/depth_loss': 0.4069998781196773, 'train/dino_loss': 0.5088259298354387, 'epoch': 0.01}
+ 50%|█████     | 5/10 [02:51<01:46, 21.40s/it] 60%|██████    | 6/10 [03:02<01:12, 18.11s/it]                                              {'train/ce_loss': 1.2933523021638393, 'train/seg_loss': 0.8463492151349783, 'train/depth_loss': 0.4028315180912614, 'train/dino_loss': 0.5086523042991757, 'epoch': 0.01}
+ 60%|██████    | 6/10 [03:03<01:12, 18.11s/it] 70%|███████   | 7/10 [03:14<00:48, 16.03s/it]                                              {'train/ce_loss': 1.3204504810273647, 'train/seg_loss': 0.8433062825351954, 'train/depth_loss': 0.3967047673650086, 'train/dino_loss': 0.49555452540516853, 'epoch': 0.01}
+ 70%|███████   | 7/10 [03:14<00:48, 16.03s/it] 80%|████████  | 8/10 [03:25<00:29, 14.50s/it]                                              {'train/ce_loss': 1.156058806926012, 'train/seg_loss': 1.0361665394157171, 'train/depth_loss': 0.45386702474206686, 'train/dino_loss': 0.504132186062634, 'epoch': 0.01}
+ 80%|████████  | 8/10 [03:26<00:29, 14.50s/it] 90%|█████████ | 9/10 [03:36<00:13, 13.49s/it]                                              {'train/ce_loss': 1.1370318606495857, 'train/seg_loss': 0.7857070341706276, 'train/depth_loss': 0.43351032119244337, 'train/dino_loss': 0.5106816897168756, 'epoch': 0.01}
+ 90%|█████████ | 9/10 [03:37<00:13, 13.49s/it]W1027 00:28:30.192000 70035 torch/distributed/elastic/agent/server/api.py:719] Received Signals.SIGTERM death signal, shutting down workers
+W1027 00:28:30.198000 70035 torch/distributed/elastic/multiprocessing/api.py:897] Sending process 70102 closing signal SIGTERM
+Traceback (most recent call last):
+  File "/workspace/envs/fl1/bin/torchrun", line 10, in <module>
+    sys.exit(main())
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 355, in wrapper
+    return f(*args, **kwargs)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/run.py", line 918, in main
+    run(args)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/run.py", line 909, in run
+    elastic_launch(
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 138, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 260, in launch_agent
+    result = agent.run()
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/elastic/metrics/api.py", line 137, in wrapper
+    result = f(*args, **kwargs)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/elastic/agent/server/api.py", line 711, in run
+    result = self._invoke_run(role)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/elastic/agent/server/api.py", line 870, in _invoke_run
+    time.sleep(monitor_interval)
+  File "/workspace/envs/fl1/lib/python3.10/site-packages/torch/distributed/elastic/multiprocessing/api.py", line 84, in _terminate_process_handler
+    raise SignalException(f"Process {os.getpid()} got signal: {sigval}", sigval=sigval)
+torch.distributed.elastic.multiprocessing.api.SignalException: Process 70035 got signal: 15

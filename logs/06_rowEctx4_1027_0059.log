@@ -1,0 +1,32 @@
+⚙️  Running in WANDB offline mode
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:00<00:00, 18.04it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:00<00:00, 32.48it/s]
+The image processor of type `Qwen2VLImageProcessor` is now loaded as a fast processor by default, even if the model checkpoint was saved with a slow processor. This is a breaking change and may produce slightly different outputs. To continue using the slow processor, instantiate this class with `use_fast=False`. Note that this behavior will be extended to all models in a future release.
+trainable params: 40,380,928 || all params: 8,332,547,584 || trainable%: 0.4846
+[F-CoVT] mode=fcovt heads params: 26,621,696
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+WARNING:accelerate.accelerator:Gradient accumulation steps mismatch: GradientAccumulationPlugin has 1, DeepSpeed config has 16. Using DeepSpeed's value.
+  0%|          | 0/10 [00:00<?, ?it/s]`loss_type=None` was set in the config but it is unrecognized. Using the default loss: `ForCausalLMLoss`.
+WARNING:dinov2:xFormers not available
+WARNING:dinov2:xFormers not available
+Using cache found in /workspace/torch/hub/facebookresearch_dinov2_main
+/workspace/torch/hub/facebookresearch_dinov2_main/dinov2/layers/swiglu_ffn.py:51: UserWarning: xFormers is not available (SwiGLU)
+  warnings.warn("xFormers is not available (SwiGLU)")
+/workspace/torch/hub/facebookresearch_dinov2_main/dinov2/layers/attention.py:33: UserWarning: xFormers is not available (Attention)
+  warnings.warn("xFormers is not available (Attention)")
+/workspace/torch/hub/facebookresearch_dinov2_main/dinov2/layers/block.py:40: UserWarning: xFormers is not available (Block)
+  warnings.warn("xFormers is not available (Block)")
+ 10%|█         | 1/10 [01:59<17:51, 119.07s/it]                                               {'train/ce_loss': 3.06689116358757, 'train/seg_loss': 0.9442458245903254, 'train/depth_loss': 0.49469210486859083, 'train/dino_loss': 0.502903999760747, 'epoch': 0.0}
+ 10%|█         | 1/10 [01:59<17:51, 119.07s/it] 20%|██        | 2/10 [02:10<07:25, 55.70s/it]                                               {'train/ce_loss': 3.519200436770916, 'train/seg_loss': 0.95643600076437, 'train/depth_loss': 0.4221283053047955, 'train/dino_loss': 0.5012267744168639, 'epoch': 0.0}
+ 20%|██        | 2/10 [02:10<07:25, 55.70s/it] 30%|███       | 3/10 [02:22<04:09, 35.69s/it]                                              {'train/ce_loss': 3.4628374502062798, 'train/seg_loss': 1.1282514985650778, 'train/depth_loss': 0.42063800268806517, 'train/dino_loss': 0.5120843658223748, 'epoch': 0.0}
+ 30%|███       | 3/10 [02:22<04:09, 35.69s/it] 40%|████      | 4/10 [02:34<02:37, 26.28s/it]                                              {'train/ce_loss': 3.5214895009994507, 'train/seg_loss': 0.8068785965442657, 'train/depth_loss': 0.5197329167276621, 'train/dino_loss': 0.510805762372911, 'epoch': 0.01}
+ 40%|████      | 4/10 [02:34<02:37, 26.28s/it] 50%|█████     | 5/10 [02:45<01:44, 20.90s/it]                                              {'loss': 7.6568, 'grad_norm': 6.021333694458008, 'learning_rate': 3.7500000000000003e-05, 'epoch': 0.01}
+ 50%|█████     | 5/10 [02:45<01:44, 20.90s/it]                                              {'train/ce_loss': 3.036162421107292, 'train/seg_loss': 0.9787791110575199, 'train/depth_loss': 0.4596146261319518, 'train/dino_loss': 0.5082994680851698, 'epoch': 0.01}
+ 50%|█████     | 5/10 [02:46<01:44, 20.90s/it] 60%|██████    | 6/10 [02:57<01:11, 17.75s/it]                                              {'train/ce_loss': 2.3389627039432526, 'train/seg_loss': 0.8762303162366152, 'train/depth_loss': 0.4746115580201149, 'train/dino_loss': 0.5081155672669411, 'epoch': 0.01}
+ 60%|██████    | 6/10 [02:57<01:11, 17.75s/it] 70%|███████   | 7/10 [03:08<00:47, 15.75s/it]                                              {'train/ce_loss': 2.4705425053834915, 'train/seg_loss': 0.9070745017379522, 'train/depth_loss': 0.4461204814724624, 'train/dino_loss': 0.4948962079361081, 'epoch': 0.01}
+ 70%|███████   | 7/10 [03:09<00:47, 15.75s/it] 80%|████████  | 8/10 [03:20<00:28, 14.31s/it]                                              {'train/ce_loss': 2.022954046726227, 'train/seg_loss': 1.1648725159466267, 'train/depth_loss': 0.510800895281136, 'train/dino_loss': 0.5034038443118334, 'epoch': 0.01}
+ 80%|████████  | 8/10 [03:20<00:28, 14.31s/it] 90%|█████████ | 9/10 [03:31<00:13, 13.37s/it]                                              {'train/ce_loss': 1.8531925603747368, 'train/seg_loss': 0.8338251169770956, 'train/depth_loss': 0.4815356070175767, 'train/dino_loss': 0.5099487537518144, 'epoch': 0.01}
+ 90%|█████████ | 9/10 [03:31<00:13, 13.37s/it]100%|██████████| 10/10 [03:43<00:00, 13.10s/it]                                               {'loss': 5.2762, 'grad_norm': 2.4504404067993164, 'learning_rate': 1.5076844803522922e-06, 'epoch': 0.02}
+100%|██████████| 10/10 [03:43<00:00, 13.10s/it]                                               {'train_runtime': 234.6841, 'train_samples_per_second': 0.682, 'train_steps_per_second': 0.043, 'train_loss': 6.466504287719727, 'epoch': 0.02}
+100%|██████████| 10/10 [03:54<00:00, 13.10s/it]100%|██████████| 10/10 [03:54<00:00, 23.47s/it]
+[rank0]:[W1027 01:05:59.997286680 ProcessGroupNCCL.cpp:1496] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())

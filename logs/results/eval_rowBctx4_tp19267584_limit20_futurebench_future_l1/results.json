@@ -1,0 +1,136 @@
+{
+  "results": {
+    "futurebench_future_l1": {
+      "alias": "futurebench_future_l1",
+      "future_acc,none": 25.0,
+      "future_acc_stderr,none": "N/A"
+    }
+  },
+  "group_subtasks": {
+    "futurebench_future_l1": []
+  },
+  "configs": {
+    "futurebench_future_l1": {
+      "task": "futurebench_future_l1",
+      "dataset_path": "/workspace/data/futurebench/hf",
+      "dataset_kwargs": {
+        "cache_dir": "/workspace/data/futurebench/videos/"
+      },
+      "test_split": "test",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function future_pred_doc_to_visual at 0x7c8a89838ca0>",
+      "doc_to_text": "<function future_pred_doc_to_text at 0x7c8a8983bac0>",
+      "doc_to_target": "<function future_pred_doc_to_target at 0x7c8a88f24550>",
+      "process_results": "<function future_pred_process_reasoning_results at 0x7c8a88f25120>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "future_acc",
+          "aggregation": "<function future_pred_aggregate_results at 0x7c8a88f25bd0>",
+          "higher_is_better": true
+        },
+        {
+          "metric": "hop1_acc",
+          "aggregation": "<function future_pred_aggregate_hop1 at 0x7c8a88f265f0>",
+          "higher_is_better": true
+        },
+        {
+          "metric": "hop2_acc",
+          "aggregation": "<function future_pred_aggregate_hop2 at 0x7c8a88f27010>",
+          "higher_is_better": true
+        },
+        {
+          "metric": "hop3_acc",
+          "aggregation": "<function future_pred_aggregate_hop3 at 0x7c8a88f27a30>",
+          "higher_is_better": true
+        },
+        {
+          "metric": "hop5_acc",
+          "aggregation": "<function future_pred_aggregate_hop5 at 0x7c8a88f504c0>",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 2048,
+        "temperature": 0.0,
+        "top_p": 1,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ]
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "metadata": [
+        {
+          "version": 0.0
+        }
+      ],
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "pre_prompt": "",
+          "post_prompt": "Please provide only the single option letter within the <answer> </answer> tags."
+        },
+        "pre_prompt": "",
+        "post_prompt": "Please provide only the single option letter within the <answer> </answer> tags."
+      }
+    }
+  },
+  "versions": {
+    "futurebench_future_l1": "Yaml"
+  },
+  "n-shot": {
+    "futurebench_future_l1": 0
+  },
+  "higher_is_better": {
+    "futurebench_future_l1": {
+      "future_acc": true,
+      "hop1_acc": true,
+      "hop2_acc": true,
+      "hop3_acc": true,
+      "hop5_acc": true
+    }
+  },
+  "n-samples": {
+    "futurebench_future_l1": {
+      "original": 1056,
+      "effective": 20
+    }
+  },
+  "config": {
+    "model": "qwen2_5_vl",
+    "model_args": "pretrained=/workspace/outputs/rowBctx4_1026_1618/merged,use_flash_attention_2=True,max_num_frames=32,max_pixels=200704,total_pixels=19267584",
+    "batch_size": "1",
+    "batch_sizes": [],
+    "device": null,
+    "use_cache": null,
+    "limit": 20.0,
+    "bootstrap_iters": 100000,
+    "gen_kwargs": "",
+    "random_seed": 0,
+    "numpy_seed": 1234,
+    "torch_seed": 1234,
+    "fewshot_seed": 1234
+  },
+  "git_hash": "b230346",
+  "date": "20261029_042741",
+  "task_hashes": {
+    "futurebench_future_l1": "f7cf4286cf10449d3b591124c9bc2781af4d35ef68795cabf4a5d0bae564406a"
+  },
+  "model_source": "qwen2_5_vl",
+  "model_name": "/workspace/outputs/rowBctx4_1026_1618/merged",
+  "model_name_sanitized": "rowBctx4_1026_1618__merged",
+  "system_instruction": null,
+  "system_instruction_sha": null,
+  "fewshot_as_multiturn": false,
+  "chat_template": null,
+  "chat_template_sha": null,
+  "start_time": 733249.517224648,
+  "end_time": 733330.317429025,
+  "total_evaluation_time_seconds": "80.80020437692292"
+}

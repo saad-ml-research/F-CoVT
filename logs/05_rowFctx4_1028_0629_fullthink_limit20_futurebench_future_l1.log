@@ -1,0 +1,29 @@
+[32m2026-10-28 18:29:14.037[0m | [1mINFO    [0m | [36m__main__[0m:[36mcli_evaluate[0m:[36m295[0m - [1mVerbosity set to INFO[0m
+[32m2026-10-28 18:29:18.700[0m | [1mINFO    [0m | [36m__main__[0m:[36mcli_evaluate_single[0m:[36m378[0m - [1mEvaluation tracker args: {'output_path': '/workspace/outputs/eval_rowFctx4_1028_0629_fullthink_limit20_futurebench_future_l1'}[0m
+[32m2026-10-28 18:29:18.700[0m | [33m[1mWARNING [0m | [36m__main__[0m:[36mcli_evaluate_single[0m:[36m400[0m - [33m[1m --limit SHOULD ONLY BE USED FOR TESTING.REAL METRICS SHOULD NOT BE COMPUTED USING LIMIT.[0m
+[32m2026-10-28 18:29:18.705[0m | [1mINFO    [0m | [36m__main__[0m:[36mcli_evaluate_single[0m:[36m467[0m - [1mSelected Tasks: ['futurebench_future_l1'][0m
+[32m2026-10-28 18:29:18.718[0m | [1mINFO    [0m | [36mlmms_eval.evaluator[0m:[36msimple_evaluate[0m:[36m155[0m - [1mSetting random seed to 0 | Setting numpy seed to 1234 | Setting torch manual seed to 1234[0m
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:00<00:02,  1.04it/s]Loading checkpoint shards:  50%|█████     | 2/4 [00:01<00:01,  1.22it/s]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:02<00:00,  1.31it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:02<00:00,  1.75it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:02<00:00,  1.50it/s]
+[32m2026-10-28 18:29:23.400[0m | [1mINFO    [0m | [36mlmms_eval.evaluator_utils[0m:[36mfrom_taskdict[0m:[36m91[0m - [1mNo metadata found in task config for futurebench_future_l1, using default n_shot=0[0m
+[32m2026-10-28 18:29:23.406[0m | [1mINFO    [0m | [36mlmms_eval.api.task[0m:[36mbuild_all_requests[0m:[36m428[0m - [1mBuilding contexts for futurebench_future_l1 on rank 0...[0m
+  0%|          | 0/20 [00:00<?, ?it/s]100%|██████████| 20/20 [00:00<00:00, 11306.93it/s]
+[32m2026-10-28 18:29:23.408[0m | [1mINFO    [0m | [36mlmms_eval.evaluator[0m:[36mevaluate[0m:[36m447[0m - [1mRunning generate_until requests[0m
+Model Responding:   0%|          | 0/20 [00:00<?, ?it/s]qwen-vl-utils using decord to read video.
+The following generation flags are not valid and may be ignored: ['temperature']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
+Model Responding:   5%|▌         | 1/20 [00:02<00:52,  2.78s/it]Model Responding:  10%|█         | 2/20 [00:03<00:24,  1.34s/it]Model Responding:  15%|█▌        | 3/20 [00:05<00:29,  1.71s/it]Model Responding:  20%|██        | 4/20 [00:09<00:40,  2.53s/it]Model Responding:  25%|██▌       | 5/20 [00:11<00:35,  2.36s/it]Model Responding:  30%|███       | 6/20 [00:13<00:31,  2.27s/it]Model Responding:  35%|███▌      | 7/20 [00:15<00:30,  2.32s/it]Model Responding:  40%|████      | 8/20 [00:18<00:28,  2.41s/it]Model Responding:  45%|████▌     | 9/20 [00:20<00:27,  2.51s/it]Model Responding:  50%|█████     | 10/20 [00:21<00:18,  1.82s/it]Model Responding:  55%|█████▌    | 11/20 [00:23<00:18,  2.09s/it]Model Responding:  60%|██████    | 12/20 [00:26<00:17,  2.25s/it]Model Responding:  65%|██████▌   | 13/20 [00:28<00:15,  2.19s/it]Model Responding:  70%|███████   | 14/20 [00:30<00:13,  2.20s/it][h264 @ 0x670f9e00] mmco: unref short failure
+Model Responding:  75%|███████▌  | 15/20 [00:33<00:11,  2.20s/it]Model Responding:  80%|████████  | 16/20 [00:34<00:08,  2.10s/it]Model Responding:  85%|████████▌ | 17/20 [00:36<00:06,  2.06s/it]Model Responding:  90%|█████████ | 18/20 [00:39<00:04,  2.20s/it][h264 @ 0x60c50ec0] mmco: unref short failure
+Model Responding:  95%|█████████▌| 19/20 [00:43<00:02,  2.70s/it]Model Responding: 100%|██████████| 20/20 [00:45<00:00,  2.50s/it]Model Responding: 100%|██████████| 20/20 [00:45<00:00,  2.26s/it]
+Postprocessing:   0%|          | 0/20 [00:00<?, ?it/s]Postprocessing: 100%|██████████| 20/20 [00:00<00:00, 2056.08it/s]
+[32m2026-10-28 18:30:08.746[0m | [1mINFO    [0m | [36mutils[0m:[36m_per_hop_acc[0m:[36m158[0m - [1mEvaluation on question types: hop1: 35.0%[0m
+[32m2026-10-28 18:30:08.746[0m | [1mINFO    [0m | [36mutils[0m:[36m_per_hop_acc[0m:[36m158[0m - [1mEvaluation on question types: hop2: 0.0%[0m
+[32m2026-10-28 18:30:08.746[0m | [1mINFO    [0m | [36mutils[0m:[36m_per_hop_acc[0m:[36m158[0m - [1mEvaluation on question types: hop3: 0.0%[0m
+[32m2026-10-28 18:30:08.746[0m | [1mINFO    [0m | [36mutils[0m:[36m_per_hop_acc[0m:[36m158[0m - [1mEvaluation on question types: hop5: 0.0%[0m
+[32m2026-10-28 18:30:08.747[0m | [1mINFO    [0m | [36mutils[0m:[36mfuture_pred_aggregate_results[0m:[36m168[0m - [1mOverall Performance: 35.0%[0m
+[32m2026-10-28 18:30:08.770[0m | [1mINFO    [0m | [36mlmms_eval.loggers.evaluation_tracker[0m:[36msave_results_aggregated[0m:[36m188[0m - [1mSaving results aggregated[0m
+[32m2026-10-28 18:30:08.849[0m | [1mINFO    [0m | [36mlmms_eval.loggers.evaluation_tracker[0m:[36msave_results_samples[0m:[36m255[0m - [1mSaving per-sample results for: futurebench_future_l1[0m
+qwen2_5_vl (pretrained=/workspace/outputs/rowFctx4_1028_0629/merged,use_flash_attention_2=True,max_num_frames=32,max_pixels=200704), gen_kwargs: (), limit: 20.0, num_fewshot: None, batch_size: 1
+|        Tasks        |Version|Filter|n-shot|  Metric  |   |Value|   |Stderr|
+|---------------------|-------|------|-----:|----------|---|----:|---|------|
+|futurebench_future_l1|Yaml   |none  |     0|future_acc|↑  |   35|±  |   N/A|
+

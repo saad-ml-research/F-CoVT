@@ -1,0 +1,32 @@
+⚙️  Running in WANDB offline mode
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:  20%|██        | 1/5 [00:00<00:03,  1.13it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:01<00:01,  1.65it/s]Loading checkpoint shards:  60%|██████    | 3/5 [00:01<00:01,  1.92it/s]Loading checkpoint shards:  80%|████████  | 4/5 [00:02<00:00,  2.07it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  2.25it/s]
+The image processor of type `Qwen2VLImageProcessor` is now loaded as a fast processor by default, even if the model checkpoint was saved with a slow processor. This is a breaking change and may produce slightly different outputs. To continue using the slow processor, instantiate this class with `use_fast=False`. Note that this behavior will be extended to all models in a future release.
+trainable params: 40,402,432 || all params: 8,332,569,088 || trainable%: 0.4849
+[F-CoVT] mode=fcovt heads params: 26,621,696
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+WARNING:accelerate.accelerator:Gradient accumulation steps mismatch: GradientAccumulationPlugin has 1, DeepSpeed config has 16. Using DeepSpeed's value.
+  0%|          | 0/10 [00:00<?, ?it/s]`loss_type=None` was set in the config but it is unrecognized. Using the default loss: `ForCausalLMLoss`.
+WARNING:dinov2:xFormers not available
+WARNING:dinov2:xFormers not available
+Using cache found in /workspace/torch/hub/facebookresearch_dinov2_main
+/workspace/torch/hub/facebookresearch_dinov2_main/dinov2/layers/swiglu_ffn.py:51: UserWarning: xFormers is not available (SwiGLU)
+  warnings.warn("xFormers is not available (SwiGLU)")
+/workspace/torch/hub/facebookresearch_dinov2_main/dinov2/layers/attention.py:33: UserWarning: xFormers is not available (Attention)
+  warnings.warn("xFormers is not available (Attention)")
+/workspace/torch/hub/facebookresearch_dinov2_main/dinov2/layers/block.py:40: UserWarning: xFormers is not available (Block)
+  warnings.warn("xFormers is not available (Block)")
+ 10%|█         | 1/10 [02:16<20:25, 136.17s/it]                                               {'train/ce_loss': 1.0579326078295708, 'train/seg_loss': 0.9440696202218533, 'train/depth_loss': 0.5205647945404053, 'train/dino_loss': 0.5028764484450221, 'epoch': 0.0}
+ 10%|█         | 1/10 [02:16<20:25, 136.17s/it] 20%|██        | 2/10 [02:27<08:22, 62.82s/it]                                               {'train/ce_loss': 1.257149014621973, 'train/seg_loss': 0.9490933045744896, 'train/depth_loss': 0.4610889358446002, 'train/dino_loss': 0.5011941976845264, 'epoch': 0.0}
+ 20%|██        | 2/10 [02:28<08:22, 62.82s/it] 30%|███       | 3/10 [02:39<04:37, 39.66s/it]                                              {'train/ce_loss': 1.725161500275135, 'train/seg_loss': 1.0649142172187567, 'train/depth_loss': 0.328276292886585, 'train/dino_loss': 0.5122716249898076, 'epoch': 0.0}
+ 30%|███       | 3/10 [02:40<04:37, 39.66s/it] 40%|████      | 4/10 [02:51<02:52, 28.75s/it]                                              {'train/ce_loss': 1.7828402444720268, 'train/seg_loss': 0.7797016277909279, 'train/depth_loss': 0.29123218823224306, 'train/dino_loss': 0.5110055459663272, 'epoch': 0.01}
+ 40%|████      | 4/10 [02:52<02:52, 28.75s/it] 50%|█████     | 5/10 [03:03<01:52, 22.51s/it]                                              {'loss': 6.582, 'grad_norm': 361.19525146484375, 'learning_rate': 3.7500000000000003e-05, 'epoch': 0.01}
+ 50%|█████     | 5/10 [03:03<01:52, 22.51s/it]                                              {'train/ce_loss': 1.5661089643836021, 'train/seg_loss': 0.8814214766025543, 'train/depth_loss': 0.3095124321989715, 'train/dino_loss': 0.5086635816842318, 'epoch': 0.01}
+ 50%|█████     | 5/10 [03:03<01:52, 22.51s/it] 60%|██████    | 6/10 [03:15<01:15, 18.88s/it]                                              {'train/ce_loss': 1.3177202716469765, 'train/seg_loss': 0.8313294444233179, 'train/depth_loss': 0.29629772063344717, 'train/dino_loss': 0.5083269141614437, 'epoch': 0.01}
+ 60%|██████    | 6/10 [03:15<01:15, 18.88s/it] 70%|███████   | 7/10 [03:26<00:49, 16.56s/it]                                              {'train/ce_loss': 1.2234572619199753, 'train/seg_loss': 0.8379173371940851, 'train/depth_loss': 0.3282220996916294, 'train/dino_loss': 0.49514113552868366, 'epoch': 0.01}
+ 70%|███████   | 7/10 [03:27<00:49, 16.56s/it] 80%|████████  | 8/10 [03:38<00:29, 14.87s/it]                                              {'train/ce_loss': 1.1212563589215279, 'train/seg_loss': 1.0114617254585028, 'train/depth_loss': 0.3270827904343605, 'train/dino_loss': 0.5036698691546917, 'epoch': 0.01}
+ 80%|████████  | 8/10 [03:38<00:29, 14.87s/it] 90%|█████████ | 9/10 [03:49<00:13, 13.74s/it]                                              {'train/ce_loss': 1.0324067510664463, 'train/seg_loss': 0.7740689050406218, 'train/depth_loss': 0.3103063474409282, 'train/dino_loss': 0.5101659586653113, 'epoch': 0.01}
+ 90%|█████████ | 9/10 [03:49<00:13, 13.74s/it]100%|██████████| 10/10 [04:01<00:00, 13.18s/it]                                               {'loss': 5.6548, 'grad_norm': 141.09426879882812, 'learning_rate': 1.5076844803522922e-06, 'epoch': 0.02}
+100%|██████████| 10/10 [04:01<00:00, 13.18s/it]                                               {'train_runtime': 253.0775, 'train_samples_per_second': 0.632, 'train_steps_per_second': 0.04, 'train_loss': 6.118427085876465, 'epoch': 0.02}
+100%|██████████| 10/10 [04:13<00:00, 13.18s/it]100%|██████████| 10/10 [04:13<00:00, 25.31s/it]
+[rank0]:[W1027 00:03:35.523822239 ProcessGroupNCCL.cpp:1496] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
