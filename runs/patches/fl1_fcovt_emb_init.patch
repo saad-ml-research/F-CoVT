@@ -1,0 +1,17 @@
+--- a/src/train/train.py
++++ b/src/train/train.py
+@@ -220,9 +220,11 @@
+     # [F-CoVT] thought tokens: start from the mean real-token embedding and stay frozen (fixed placeholders;
+     # the thinking is in the hidden states). Training their rows made grad norms explode (~35-90 vs ~2.5).
+     if FCOVT_TOKEN_IDS:
+-        with torch.no_grad():
+-            _emb = model.get_input_embeddings().weight
+-            _emb[FCOVT_TOKEN_IDS] = _emb[:latent_id].float().mean(0, keepdim=True).to(_emb.dtype)
++        _how = fcovt_core.init_thought_embeddings(processor.tokenizer, model.get_input_embeddings().weight, latent_id)
++        os.makedirs(training_args.output_dir, exist_ok=True)
++        with open(os.path.join(training_args.output_dir, "fcovt_emb_init.txt"), "w") as _f:
++            _f.write(_how)
++        print(f"[F-CoVT] thought-token input embeddings: {_how} init (frozen)", flush=True)
+ 
+     # [F-CoVT] LoRA wrap. Upstream has a lora_enable flag but never applies LoRA.
+     # Slim version: LoRA on language-model linears + only the 3 new latent-token rows trainable

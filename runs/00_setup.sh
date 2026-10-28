@@ -39,7 +39,7 @@ for E in covt fl1; do uv pip install -q --python $W/envs/$E/bin/python hf_transf
 
 # --- Future-L1 patches: LoRA wrap (upstream never applies it) + answer-only mode / response-mode fix ---
 cd $W/Future-L1
-for P in fl1_lora fl1_response_mode fl1_frames_dir fl1_trainer_import fl1_context_frames fl1_fcovt fl1_fcovt_staged fl1_fcovt_staged_fix fl1_fcovt_staged_dbg fl1_fcovt_staged_pos; do
+for P in fl1_lora fl1_response_mode fl1_frames_dir fl1_trainer_import fl1_context_frames fl1_fcovt fl1_fcovt_staged fl1_fcovt_staged_fix fl1_fcovt_staged_dbg fl1_fcovt_staged_pos fl1_fcovt_emb_init; do
   if git apply --check $W/F-CoVT/runs/patches/$P.patch 2>/dev/null; then git apply $W/F-CoVT/runs/patches/$P.patch && echo "applied $P"
   else echo "skip $P (already applied?)"; fi
 done

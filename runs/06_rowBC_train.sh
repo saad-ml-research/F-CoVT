@@ -16,6 +16,7 @@ export HF_HOME=/workspace/hf PYTHONPATH=/workspace/Future-L1 TOKENIZERS_PARALLEL
 export FCOVT_RESPONSE_MODE=$MODE FCOVT_CONTEXT=$CONTEXT TORCH_HOME=/workspace/torch FCOVT_CODE=/workspace/F-CoVT/runs/fcovt
 export FCOVT_STEP_FILE=$OUT/fcovt_step.txt     # row F: trainer tells the data workers the current step (stage)
 [ "$MODE" = fcovt_staged ] && export FCOVT_HEAD_LR=${FCOVT_HEAD_LR:-1e-5}   # CoVT projection_layer_lr
+[ "$MODE" = fcovt_staged ] && export FCOVT_EMB_INIT=${FCOVT_EMB_INIT:-word}  # thought tokens start as real words
 GA=${GA:-16}; WORKERS=${WORKERS:-8}            # smoke tests: GA=2 WORKERS=1 so stages switch on time
 cd /workspace/Future-L1
 EXTRA=""; [ "$SMOKE" -gt 0 ] && EXTRA="--max_steps $SMOKE"

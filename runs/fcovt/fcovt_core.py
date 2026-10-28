@@ -52,6 +52,25 @@ def thought_text(mode, n_future):
     return "".join(block(mode) for _ in range(max(1, min(int(n_future), MAX_FUTURE))))
 
 
+# Input-embedding init for the thought tokens (rows stay frozen). "mean" (rows D/E): the average of all real
+# token rows -- an unusually short vector that confused the model (row F smoke: answer CE 7-19 vs 2-3 without
+# the tokens). "word": each token starts as a related real word, like CoVT's named tokens.
+INIT_WORDS = {START: " [", END: " ]", SEG: " segmentation", DEP: " depth", DINO: " feature", LAT: " latent"}
+
+
+def init_thought_embeddings(tok, emb, latent_id, how=None):
+    how = how or os.environ.get("FCOVT_EMB_INIT", "mean")
+    with torch.no_grad():
+        for t in ALL_TOKENS:
+            i = tok.convert_tokens_to_ids(t)
+            if how == "word":
+                w = tok(INIT_WORDS[t], add_special_tokens=False)["input_ids"]
+                emb[i] = emb[w].float().mean(0).to(emb.dtype)
+            else:
+                emb[i] = emb[:latent_id].float().mean(0).to(emb.dtype)
+    return how
+
+
 # ----------------------------------------------------------------------------- heads
 
 class ExpertHeads(nn.Module):

@@ -24,10 +24,12 @@ if "<|fcovt_start|>" in tok.get_vocab():
     names = ["<|fcovt_start|>", "<|fcovt_end|>", "<|fcovt_seg|>", "<|fcovt_depth|>", "<|fcovt_dino|>", "<|fcovt_lat|>"]
     ids = [tok.convert_tokens_to_ids(t) for t in names]
     latent_id = tok.convert_tokens_to_ids("<|latent|>")
-    with torch.no_grad():
-        emb = base.get_input_embeddings().weight
-        emb[ids] = emb[:latent_id].float().mean(0, keepdim=True).to(emb.dtype)
-    print(f"set {len(ids)} F-CoVT thought-token embeddings to the mean of rows [0, {latent_id})")
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "fcovt"))
+    import fcovt_core
+    f = os.path.join(run, "fcovt_emb_init.txt")   # written by train.py (row F); rows D/E: mean
+    how = fcovt_core.init_thought_embeddings(tok, base.get_input_embeddings().weight, latent_id,
+                                             open(f).read().strip() if os.path.exists(f) else "mean")
+    print(f"set {len(ids)} F-CoVT thought-token embeddings ({how} init, as in training)")
 model = PeftModel.from_pretrained(base, adapter).merge_and_unload()
 # row F: the thought tokens' OUTPUT rows were trained as heads.out_rows (so the model can write them itself)
 hp = os.path.join(run, "fcovt_heads.pt")
