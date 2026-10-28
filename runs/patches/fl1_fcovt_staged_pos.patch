@@ -1,0 +1,18 @@
+--- a/src/dataset/twiff_sft_dataset.py
++++ b/src/dataset/twiff_sft_dataset.py
+@@ -490,9 +490,12 @@
+             user_content = [c for c in user_content if c["type"] == "image"
+                             or c.get("text") in ("Earlier frames (oldest first):", "Current frame:")]
+             user_content.append({"type": "text", "text": q_override})
+-        if prompt_pads:  # stage 1: thought tokens right after the current frame (CoVT: after <|vision_end|>)
+-            last_img = max(i for i, c in enumerate(user_content) if c["type"] == "image")
+-            user_content.insert(last_img + 1, {"type": "text", "text": prompt_pads})
++        if prompt_pads:  # stage 1: thought tokens in the prompt
++            if os.environ.get("FCOVT_S1_POS", "end") == "image":  # CoVT: right after <|vision_end|>
++                last_img = max(i for i, c in enumerate(user_content) if c["type"] == "image")
++                user_content.insert(last_img + 1, {"type": "text", "text": prompt_pads})
++            else:  # default: end of the user turn (right after the frame broke single-frame samples: CE ~16-19)
++                user_content.append({"type": "text", "text": prompt_pads})
+         assistant_content.append({"type": "text", "text": response})
+     elif mode in ("fcovt", "fcovt_generic"):
+         # [F-CoVT] rows E / D: future thought tokens (supervised in the trainer), then the answer
