@@ -1,0 +1,22 @@
+--- a/src/trainer/future_l1_trainer.py
++++ b/src/trainer/future_l1_trainer.py
+@@ -98,11 +98,14 @@
+                 while hasattr(_b, "module"):
+                     _b = _b.module
+                 _b = _b.get_base_model() if hasattr(_b, "get_base_model") else _b
+-                with torch.no_grad():
+-                    gap = (_b.lm_head(h[:, -1:]).float() - outputs.logits[:, -1:].float()).abs().max().item()
+-                self._fc_norm = None if gap < 1e-2 else _b.model.language_model.norm
+-                print(f"[F-CoVT staged] lm_head(hidden[-1]) vs logits gap {gap:.2e} -> "
+-                      f"{'apply final norm' if self._fc_norm is not None else 'ok'}", flush=True)
++                _n = _b.model.language_model.norm
++                with torch.no_grad():  # compare both options; bf16 rounding alone gives gaps ~0.1
++                    ref = outputs.logits[:, -1:].float()
++                    g_raw = (_b.lm_head(h[:, -1:]).float() - ref).abs().max().item()
++                    g_norm = (_b.lm_head(_n(h[:, -1:])).float() - ref).abs().max().item()
++                self._fc_norm = _n if g_norm < g_raw else None
++                print(f"[F-CoVT staged] logits gap: hidden[-1] {g_raw:.2e} | norm(hidden[-1]) {g_norm:.2e} -> "
++                      f"{'apply final norm' if self._fc_norm is not None else 'use hidden[-1] as is'}", flush=True)
+             if self._fc_norm is not None:
+                 h = self._fc_norm(h)
+             tid = torch.tensor(list(self.fcovt.ids.values()), device=h.device)
