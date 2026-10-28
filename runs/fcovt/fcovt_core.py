@@ -148,6 +148,8 @@ def _pad(i):
 
 def sample_plan(stage, experts_on, rng):
     """Per-sample choices, made in the collator so the text and the loss agree."""
+    if os.environ.get("FCOVT_DBG_PLAIN"):           # diagnostic: B' format (answer only) through the row F code
+        return {"stage": stage, "experts": [], "loss": False, "target": "fut"}
     if stage == 4 and rng.randint(0, 5) == 0:       # CoVT: 1 in 6 answers without thoughts
         return {"stage": 4, "experts": [], "loss": False, "target": "fut"}
     ex = sorted(rng.sample(range(3), rng.randint(1, 3))) if stage == 4 else [0, 1, 2]
