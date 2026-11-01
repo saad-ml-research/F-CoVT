@@ -18,6 +18,7 @@ ap.add_argument("--out", default="/workspace/data/fl1_10k/sam_masks")
 ap.add_argument("--ckpt", default="/workspace/CoVT/train/src/anchors/segment_anything/ckpt/sam_vit_h_4b8939.pth")
 ap.add_argument("--current", type=int, default=1, help="also do the current (question) frames, after all future ones")
 ap.add_argument("--points_per_batch", type=int, default=256, help="speed only; does not change results")
+ap.add_argument("--points_per_side", type=int, default=32, help="32 = CoVT default; 16 = ~4x faster, coarser masks")
 ap.add_argument("--limit", type=int, default=0, help="only the first N jobs (for a speed test)")
 ap.add_argument("--shard", default="0/1", help="i/n: this worker takes every n-th frame starting at i")
 a = ap.parse_args()
@@ -35,7 +36,7 @@ todo = [j for j in jobs if not (out / j[0] / f"f{j[2]}.npz").exists()]
 print(f"{len(jobs)} frames total ({sum(len(d['reasoning_image']) for d in data)} future), {len(todo)} to do", flush=True)
 
 sam = sam_model_registry["vit_h"](checkpoint=a.ckpt).cuda().eval()
-gen = SamAutomaticMaskGenerator(sam, points_per_batch=a.points_per_batch)
+gen = SamAutomaticMaskGenerator(sam, points_per_side=a.points_per_side, points_per_batch=a.points_per_batch)
 t0 = time.time()
 for i, (sid, fdir, k) in enumerate(todo, 1):
     img = np.array(Image.open(os.path.join(fdir, f"f{k}.jpg")).convert("RGB").resize((256, 256)))
