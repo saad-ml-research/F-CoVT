@@ -16,6 +16,7 @@ ap.add_argument("model"); ap.add_argument("data"); ap.add_argument("out")
 ap.add_argument("--limit", type=int, default=0)
 ap.add_argument("--context", type=int, default=4)
 ap.add_argument("--max_new_tokens", type=int, default=160)
+ap.add_argument("--blind", action="store_true", help="replace every frame with a black image: how much do the options alone give away?")
 a = ap.parse_args()
 PREFIX = os.environ.get("FCOVT_PREFIX", "")
 MAXP, MINP = 256 * 28 * 28, 64 * 28 * 28
@@ -31,7 +32,10 @@ right, by_verb, n_think = 0, collections.defaultdict(lambda: [0, 0]), 0
 
 
 def img(d, k):
-    return {"type": "image", "image": Image.open(os.path.join(d, f"f{k}.jpg")).convert("RGB"), "max_pixels": MAXP, "min_pixels": MINP}
+    im = Image.open(os.path.join(d, f"f{k}.jpg")).convert("RGB")
+    if a.blind:
+        im = Image.new("RGB", im.size)
+    return {"type": "image", "image": im, "max_pixels": MAXP, "min_pixels": MINP}
 
 
 for i, q in enumerate(data, 1):
