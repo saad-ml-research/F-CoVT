@@ -78,7 +78,8 @@ def build(split, cap, rng):
         for j, nxt in enumerate(segs):
             cut = nxt["s"] - TAU
             if cut - OBS[0] < 0: skip["too_early"] += 1; continue
-            if any(cut < st < nxt["s"] for st in starts): skip["ambiguous_next"] += 1; continue
+            if any(cut < st < nxt["s"] for st in starts) or starts.count(nxt["s"]) > 1:  # another action starts in the gap or at the same frame
+                skip["ambiguous_next"] += 1; continue
             running = [r for r in segs if r["s"] <= cut < r["e"]]
             if any(r["act"] == nxt["act"] for r in running): skip["repeat"] += 1; continue
             step = next((c for c in COARSE.get(seq, []) if c[0] <= nxt["s"] < c[1]), None)
@@ -108,6 +109,7 @@ def build(split, cap, rng):
                 "action_id": nxt["action_id"], "verb_id": nxt["verb_id"], "noun_id": nxt["noun_id"],
                 "verb": nxt["verb"], "noun": nxt["noun"], "step": step[2], "step_end": step[1],
                 "running": [r["act"] for r in running], "cut_frame": cut, "next_start": nxt["s"]})
+    assert len({q["id"] for q in qs}) == len(qs), "duplicate question ids"
     rng.shuffle(qs)
     if qs:
         gap = sorted((q["frames_30fps"][6] - q["frames_30fps"][4]) / FPS for q in qs)
