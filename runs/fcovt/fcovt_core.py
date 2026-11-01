@@ -138,6 +138,9 @@ def build_heads(mode, hidden):
 STAGES = [float(x) for x in os.environ.get("FCOVT_STAGES", "0.375,0.5625,0.75,0.875").split(",")]
 S1_TARGET = os.environ.get("FCOVT_S1_TARGET", "current")   # stage 1 targets: current frame (CoVT-exact) or future
 STEP_FILE = os.environ.get("FCOVT_STEP_FILE", "")
+NOTHINK = float(os.environ.get("FCOVT_NOTHINK_FRAC", str(1 / 6)))  # 0 = always think (so it thinks at test)
+BLOCKS = int(os.environ.get("FCOVT_STAGED_BLOCKS", "1"))   # 2 = near future (fut[0]) + step result (fut[1])
+BLOCK_NAMES = ["next moment", "step's result"] if BLOCKS == 2 else ["future frame"]
 EXPERTS = [("seg", SEG, N_SEG, "segmentation"), ("depth", DEP, N_DEP, "depth map"),
            ("dino", DINO, N_DINO, "perception feature")]      # CoVT's order and names (data.get_anchor_task_name)
 
@@ -169,7 +172,7 @@ def sample_plan(stage, experts_on, rng):
     """Per-sample choices, made in the collator so the text and the loss agree."""
     if os.environ.get("FCOVT_DBG_PLAIN"):           # diagnostic: B' format (answer only) through the row F code
         return {"stage": stage, "experts": [], "loss": False, "target": "fut"}
-    if stage == 4 and rng.randint(0, 5) == 0:       # CoVT: 1 in 6 answers without thoughts
+    if stage == 4 and rng.random() < NOTHINK:       # CoVT: 1 in 6 answers without thoughts (FCOVT_NOTHINK_FRAC)
         return {"stage": 4, "experts": [], "loss": False, "target": "fut"}
     ex = sorted(rng.sample(range(3), rng.randint(1, 3))) if stage == 4 else [0, 1, 2]
     target = "cur" if (stage == 1 and S1_TARGET == "current") else "fut"
@@ -179,14 +182,16 @@ def sample_plan(stage, experts_on, rng):
 def staged_texts(plan, answer):
     """-> (pads to put right after the current frame in the prompt, question override or None, response)."""
     st, ex = plan["stage"], plan["experts"]
+    pads = "".join(_pad(i) for _ in range(BLOCKS) for i in ex)      # block 1's experts, then block 2's
     if st == 1:
-        return "".join(_pad(i) for i in ex), None, f"<answer>{answer}</answer>"
+        return pads, None, f"<answer>{answer}</answer>"
     if st == 2:
         names = ", ".join(EXPERTS[i][3] for i in ex)
-        return "", f"What is the {names} of the future frame?", "".join(_pad(i) for i in ex) + "\n"
+        where = " and of the ".join(BLOCK_NAMES)
+        return "", f"What is the {names} of the {where}?", pads + "\n"
     if not ex:
         return "", None, f"<answer>{answer}</answer>"
-    parts = [f"the {EXPERTS[i][3]} of the future frame is {_pad(i)}" for i in ex]
+    parts = [f"the {EXPERTS[i][3]} of the {BLOCK_NAMES[b]} is {_pad(i)}" for b in range(BLOCKS) for i in ex]
     s = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + ", and " + parts[-1]
     return "", None, f"<think> Because {s}. </think>\n<answer> {answer} </answer>"
 
@@ -384,18 +389,24 @@ class FCoVTLoss:
             parts["train/stage"] = float(p.get("stage", 0))
             if not p.get("loss") or not p.get("experts"):
                 continue
-            k = meta["cur"] if p["target"] == "cur" else (meta["fut"] or [None])[0]
-            if k is None:
+            if BLOCKS == 1:
+                ks = [meta["cur"] if p["target"] == "cur" else (meta["fut"] or [None])[0]]
+            else:                                   # block j is graded on future frame j (near, then step result)
+                ks = list(meta["fut"][:BLOCKS])
+            if not ks or any(k is None for k in ks) or len(ks) < BLOCKS:
                 continue
             ids, h = input_ids[b], hidden[b]
             cur = _load_img(meta["frames_dir"], meta["cur"])
-            tgt = cur if k == meta["cur"] else _load_img(meta["frames_dir"], k)
             step, used = hidden.new_zeros(()), 0
-            for i in p["experts"]:
+            for blk, k in enumerate(ks):
+              tgt = cur if k == meta["cur"] else _load_img(meta["frames_dir"], k)
+              sfx = "" if blk == 0 else f"_b{blk + 1}"
+              for i in p["experts"]:
                 name, tok, num, _ = EXPERTS[i]
-                hs = h[ids == self.ids[tok]]
-                if hs.shape[0] != num:
+                hs_all = h[ids == self.ids[tok]]
+                if hs_all.shape[0] != num * BLOCKS:
                     continue
+                hs = hs_all[blk * num:(blk + 1) * num]
                 if name == "seg":
                     mp = os.path.join(meta["frames_dir"].replace("/frames/", "/sam_masks/"), f"f{k}.npz")
                     if not os.path.exists(mp):
@@ -409,7 +420,7 @@ class FCoVTLoss:
                     l = F.l1_loss(self.experts.depth_from_tokens(self.heads.depth_tokens(hs), cf, phw), d_gt) * 0.005 * W_DEP
                 else:
                     l = F.mse_loss(self.heads.dino_pred(hs).float(), self.experts.dino_feats(tgt).float()) * 0.5 * W_DINO
-                parts[f"train/{name}_loss"] = parts.get(f"train/{name}_loss", 0.0) + float(l.detach())
+                parts[f"train/{name}_loss{sfx}"] = parts.get(f"train/{name}_loss{sfx}", 0.0) + float(l.detach())
                 step, used = step + l, used + 1
             if used:
                 total, n = total + step, n + 1
