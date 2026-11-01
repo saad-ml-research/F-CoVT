@@ -125,6 +125,47 @@ class StagedHeads(ExpertHeads):
         self.out_rows = nn.Parameter(torch.zeros(len(ALL_TOKENS), hidden))
 
 
+# ----------------------------------------------------------------------------- action classification head
+# FCOVT_HEAD=1: the reply ends with "<answer>"; this head reads the hidden state of that last token (the model's
+# state after any thinking) and scores every action / verb / object (Assembly101: 1,380 / 24 / 90 classes).
+HEAD = os.environ.get("FCOVT_HEAD", "") == "1"
+HEAD_SIZES = [int(x) for x in os.environ.get("FCOVT_HEAD_SIZES", "1400,32,100").split(",")]
+
+
+class ActHead(nn.Module):
+    def __init__(self, hidden=3584):
+        super().__init__()
+        self.norm = nn.LayerNorm(hidden)
+        self.drop = nn.Dropout(0.1)
+        self.action = nn.Linear(hidden, HEAD_SIZES[0])
+        self.verb = nn.Linear(hidden, HEAD_SIZES[1])
+        self.noun = nn.Linear(hidden, HEAD_SIZES[2])
+
+    def forward(self, h):                            # h [N, H] -> logits (action, verb, noun)
+        z = self.drop(self.norm(h))
+        return self.action(z), self.verb(z), self.noun(z)
+
+
+def act_loss(head, hidden, input_ids, metas, im_end_id):
+    """CE on action + verb + object at the token before the reply's <|im_end|> (the end of "<answer>")."""
+    rows, ys = [], []
+    for b, m in enumerate(metas or []):
+        a = m.get("act"); p = m.get("plan") or {}
+        if not a or min(a) < 0 or p.get("stage") == 2:   # stage 2 replies have no <answer>
+            continue
+        pos = (input_ids[b] == im_end_id).nonzero().flatten()
+        if len(pos) == 0:
+            continue
+        rows.append(hidden[b, pos[-1] - 1]); ys.append(a)
+    if not rows:
+        return None, {}
+    h = torch.stack(rows).to(next(head.parameters()).dtype)
+    y = torch.tensor(ys, device=h.device)
+    la, lv, ln = head(h)
+    loss = F.cross_entropy(la.float(), y[:, 0]) + F.cross_entropy(lv.float(), y[:, 1]) + F.cross_entropy(ln.float(), y[:, 2])
+    return loss, {"train/act_loss": float(loss.detach()), "train/act_top1": float((la.argmax(-1) == y[:, 0]).float().mean())}
+
+
 def build_heads(mode, hidden):
     if mode == "staged":
         return StagedHeads(hidden)

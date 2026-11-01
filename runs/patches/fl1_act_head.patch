@@ -1,0 +1,126 @@
+--- a/src/dataset/twiff_sft_dataset.py
++++ b/src/dataset/twiff_sft_dataset.py
+@@ -562,6 +562,10 @@
+                 {"type": "text", "text": f"<answer>{final_answer}</answer>"}
+             )
+ 
++    if os.environ.get("FCOVT_HEAD") == "1":  # [F-CoVT] classification head: the reply stops at "<answer>"
++        for c in assistant_content:
++            if c.get("type") == "text" and "<answer>" in c["text"]:
++                c["text"] = c["text"][: c["text"].index("<answer>") + len("<answer>")]
+     if not user_content or not assistant_content:
+         logging.warning("Empty user_content or assistant_content, skipping.")
+         return None
+@@ -660,7 +664,8 @@
+         ]
+         # [F-CoVT] keep per-sample frame info aligned with the kept examples (for the expert losses)
+         fcovt_metas = [{"frames_dir": r.get("video", ""), "cur": int((r.get("image") or [1])[-1]),
+-                        "fut": [int(k) for k in (r.get("reasoning_image") or [])], "plan": r.get("_fc")}
++                        "fut": [int(k) for k in (r.get("reasoning_image") or [])], "plan": r.get("_fc"),
++                        "act": [int(r.get(k, -1)) for k in ("action_id", "verb_id", "noun_id")] if "action_id" in r else None}
+                        for r in raw_examples]
+         keep = [i for i, e in enumerate(examples) if e is not None]
+         examples = [examples[i] for i in keep]
+@@ -745,7 +750,7 @@
+             )
+             batch["image_out_mask"] = image_out_mask
+ 
+-        if (os.environ.get("FCOVT_RESPONSE_MODE") or "").startswith("fcovt"):
++        if (os.environ.get("FCOVT_RESPONSE_MODE") or "").startswith("fcovt") or os.environ.get("FCOVT_HEAD") == "1":
+             batch["fcovt_meta"] = fcovt_metas
+         return batch
+ 
+--- a/src/train/train.py
++++ b/src/train/train.py
+@@ -259,6 +259,16 @@
+                 fcovt_heads.out_rows.copy_(_lm[:latent_id].float().mean(0, keepdim=True).expand_as(fcovt_heads.out_rows))
+         print(f"[F-CoVT] mode={fcovt_mode} heads params: {sum(p.numel() for p in fcovt_heads.parameters()):,}")
+ 
++    act_head = None
++    if os.environ.get("FCOVT_HEAD") == "1":  # [F-CoVT] action / verb / object classification head (any mode)
++        sys.path.insert(0, os.environ.get("FCOVT_CODE", "/workspace/F-CoVT/runs/fcovt"))
++        import fcovt_core as _fch
++        _hb = model.get_base_model() if hasattr(model, "get_base_model") else model
++        _hh = getattr(getattr(_hb.config, "text_config", None), "hidden_size", None) or _hb.config.hidden_size
++        _hb.act_head = _fch.ActHead(_hh).to(dtype=compute_dtype)
++        act_head = _hb.act_head
++        print(f"[F-CoVT] action head: {sum(p.numel() for p in act_head.parameters()):,} params, sizes {_fch.HEAD_SIZES}", flush=True)
++
+     # configure latent loss type
+     model.config.latent_loss = training_args.latent_loss
+     model.config.latent_lambda = training_args.latent_lambda
+@@ -281,6 +291,9 @@
+         args=training_args,
+         **data_module
+     )
++    if act_head is not None:
++        trainer.act_head = act_head
++        trainer.act_im_end = processor.tokenizer.convert_tokens_to_ids("<|im_end|>")
+     if fcovt_heads is not None:
+         trainer.fcovt = fcovt_core.FCoVTLoss(_fc_kind, fcovt_heads, processor)
+         if _fc_kind == "staged":  # [F-CoVT] row F: tell the dataloader workers the current step
+@@ -303,6 +316,9 @@
+     trainer.save_state()
+     
+     safe_save_model_for_hf_trainer(trainer, output_dir=training_args.output_dir)
++    if act_head is not None and training_args.should_save:
++        torch.save({k: v.detach().cpu() for k, v in act_head.state_dict().items()},
++                   os.path.join(training_args.output_dir, "act_head.pt"))
+     if fcovt_heads is not None and training_args.should_save:
+         torch.save({k: v.detach().cpu() for k, v in fcovt_heads.state_dict().items()},
+                    os.path.join(training_args.output_dir, "fcovt_heads.pt"))
+--- a/src/trainer/future_l1_trainer.py
++++ b/src/trainer/future_l1_trainer.py
+@@ -131,6 +131,11 @@
+                       f"   base am: {_tok.decode(outputs.logits[0, :-1][_m].argmax(-1)[:30])!r}", flush=True)
+             extra, parts = self.fcovt.staged(h, inputs["input_ids"], fcovt_meta)
+             loss = ce + extra
++            if getattr(self, "act_head", None) is not None:  # [F-CoVT] classification head after the thoughts
++                import fcovt_core as _fch
++                _al, _ap = _fch.act_loss(self.act_head, h, inputs["input_ids"], fcovt_meta, self.act_im_end)
++                if _al is not None:
++                    loss = loss + _al; parts.update(_ap)
+             parts["train/ce_loss"] = float(ce.detach())
+             self._accumulate_step_metrics(parts)
+             return (loss, outputs) if return_outputs else loss
+@@ -142,11 +147,24 @@
+             outputs = model(**inputs, output_hidden_states=True)
+             extra, parts = self.fcovt(model, outputs.hidden_states[-1], inputs["input_ids"], fcovt_meta)
+             loss = outputs.loss + extra
++            if getattr(self, "act_head", None) is not None:  # [F-CoVT] classification head after the thoughts
++                import fcovt_core as _fch
++                _al, _ap = _fch.act_loss(self.act_head, outputs.hidden_states[-1], inputs["input_ids"], fcovt_meta, self.act_im_end)
++                if _al is not None:
++                    loss = loss + _al; parts = {**(parts or {}), **_ap}
+             if parts:
+                 self._accumulate_step_metrics(parts)
+         else:
+-            outputs = model(**inputs)
++            _head = getattr(self, "act_head", None)
++            outputs = model(**inputs, output_hidden_states=_head is not None) if _head is not None else model(**inputs)
+             loss = outputs.loss
++            if _head is not None and fcovt_meta is not None:  # [F-CoVT] row B with the classification head
++                import sys as _sys
++                _sys.path.insert(0, os.environ.get("FCOVT_CODE", "/workspace/F-CoVT/runs/fcovt"))
++                import fcovt_core as _fch
++                _al, _ap = _fch.act_loss(_head, outputs.hidden_states[-1], inputs["input_ids"], fcovt_meta, self.act_im_end)
++                if _al is not None:
++                    loss = loss + _al; self._accumulate_step_metrics(_ap)
+ 
+         ce_loss_val = None
+         latent_loss_val = None
+@@ -265,6 +283,14 @@
+                 ]
+             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
+ 
++            _alr = float(os.environ.get("FCOVT_ACT_LR", "1e-3"))  # [F-CoVT] classification head, trained from scratch
++            _ap = [p for n, p in opt_model.named_parameters() if "act_head" in n and p.requires_grad]
++            if _ap:
++                _aid = {id(p) for p in _ap}
++                for g in optimizer_grouped_parameters:
++                    g["params"] = [p for p in g["params"] if id(p) not in _aid]
++                optimizer_grouped_parameters.append({"params": _ap, "weight_decay": 0.0, "lr": _alr})
++                print(f"[F-CoVT] action head: {sum(p.numel() for p in _ap):,} params at lr {_alr}", flush=True)
+             _hlr = os.environ.get("FCOVT_HEAD_LR")  # [F-CoVT] CoVT's projection_layer_lr for the expert heads
+             if _hlr:
+                 _hp = [p for n, p in opt_model.named_parameters() if "fcovt_heads" in n and "out_rows" not in n and p.requires_grad]
