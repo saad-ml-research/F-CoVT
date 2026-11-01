@@ -50,6 +50,8 @@ COARSE = load_coarse()
 
 def load(split):
     rows = []
+    if not os.path.exists(os.path.join(a.ann, "fine-grained-annotations", f"{split}.csv")):
+        return rows
     with open(os.path.join(a.ann, "fine-grained-annotations", f"{split}.csv")) as f:
         for r in csv.DictReader(f):
             if r["video"].endswith("/" + a.view) and r.get("action_cls"):  # rows without labels are skipped
