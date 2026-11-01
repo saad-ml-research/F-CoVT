@@ -1,6 +1,6 @@
 """Stream Assembly101 videos: download one recording's C10119 video, cut out the frames the questions need, delete it.
-Frames go to <frames_root>/<question id>/f1.jpg..f6.jpg (f1-f5 input, f6 future), longest side 640 px.
-Resumable: a recording whose questions all have f6.jpg is skipped. Disk use: one ~1 GB video at a time.
+Frames go to <frames_root>/<question id>/f1.jpg..f7.jpg (f1-f5 input, f6 near future, f7 step result), longest side 640 px.
+Resumable: a recording whose questions all have their last frame is skipped. Disk use: one ~1 GB video at a time.
 usage: python 02_extract_frames.py /workspace/data/a101/train_frames.json /workspace/data/a101/validation_frames.json
 """
 import json, os, shutil, sys, time
@@ -21,7 +21,7 @@ print(f"{len(seqs)} recordings, {sum(len(v) for v in todo.values())} questions",
 t0 = time.time()
 for i, seq in enumerate(seqs, 1):
     qs = todo[seq]
-    if all(os.path.exists(os.path.join(ROOT, q, "f6.jpg")) for q in qs):
+    if all(os.path.exists(os.path.join(ROOT, q, f"f{len(fr)}.jpg")) for q, fr in qs.items()):
         continue
     os.makedirs(TMP, exist_ok=True)
     path = hf_hub_download(REPO, f"recordings/{seq}/{VIEW}", repo_type="dataset", local_dir=TMP)
