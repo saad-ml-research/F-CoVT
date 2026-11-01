@@ -11,7 +11,7 @@ Distractors: actions seen with the same toy, preferring the same verb or object 
 
 Output: <out>/<split>.json in the Future-L1 loader format (video = frames folder, image=[5], reasoning_image=[6, 7],
 answer = the option letter; action_id / verb_id / noun_id for a classification head), plus <out>/<split>_frames.json = which 30 fps frame numbers to extract per question.
-usage: python 01_build_questions.py /workspace/data/assembly101/annotations /workspace/data/a101 --train_max 10000 --val_max 2000
+usage: python 01_build_questions.py /workspace/data/assembly101/annotations /workspace/data/a101 --train_max 10000 --val_max 2000 [--test_max 2000]
 """
 import argparse, csv, json, os, random, collections
 
@@ -20,6 +20,7 @@ ap.add_argument("ann"); ap.add_argument("out")
 ap.add_argument("--view", default="C10119_rgb.mp4")
 ap.add_argument("--tau", type=float, default=1.0, help="seconds between the cut and the next action")
 ap.add_argument("--train_max", type=int, default=10000); ap.add_argument("--val_max", type=int, default=2000)
+ap.add_argument("--test_max", type=int, default=0, help="0 = skip test (official test labels may be hidden)")
 ap.add_argument("--seed", type=int, default=0)
 ap.add_argument("--frames_root", default="/workspace/data/a101/frames")
 a = ap.parse_args()
@@ -51,7 +52,7 @@ def load(split):
     rows = []
     with open(os.path.join(a.ann, "fine-grained-annotations", f"{split}.csv")) as f:
         for r in csv.DictReader(f):
-            if r["video"].endswith("/" + a.view):
+            if r["video"].endswith("/" + a.view) and r.get("action_cls"):  # rows without labels are skipped
                 rows.append(dict(seq=r["video"].split("/")[0], s=int(r["start_frame"]), e=int(r["end_frame"]),
                                  act=r["action_cls"], verb=r["verb_cls"], noun=r["noun_cls"], toy=r["toy_id"],
                                  action_id=int(r["action_id"] or -1), verb_id=int(r["verb_id"] or -1),
@@ -117,7 +118,9 @@ def build(split, cap, rng):
 
 os.makedirs(a.out, exist_ok=True)
 rng = random.Random(a.seed)
-for split, cap in (("train", a.train_max), ("validation", a.val_max)):
+for split, cap in (("train", a.train_max), ("validation", a.val_max), ("test", a.test_max)):
+    if cap <= 0:
+        continue
     qs = build(split, cap, rng)
     json.dump(qs, open(os.path.join(a.out, f"{split}.json"), "w"))
     frames = collections.defaultdict(dict)
