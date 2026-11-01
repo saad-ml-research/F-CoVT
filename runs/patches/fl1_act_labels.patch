@@ -1,0 +1,31 @@
+--- a/src/dataset/twiff_sft_dataset.py
++++ b/src/dataset/twiff_sft_dataset.py
+@@ -204,6 +204,10 @@
+                                 "reasoning_image": [int(x) for x in item.get("reasoning_image", [])],
+                                 "answer": str(item.get("answer", "")),
+                                 "cot": str(item.get("cot", "")),
++                                # [F-CoVT] classification-head labels (Assembly101); -1 when absent
++                                "action_id": int(item.get("action_id", -1)),
++                                "verb_id": int(item.get("verb_id", -1)),
++                                "noun_id": int(item.get("noun_id", -1)),
+                             }
+                         elif "messages" in item and "videos" in item:
+                             videos = [resolve_video_path(str(v), base_dir) for v in item.get("videos", [])]
+@@ -219,6 +223,7 @@
+                                 "reasoning_image": [],
+                                 "answer": "",
+                                 "cot": "",
++                                "action_id": -1, "verb_id": -1, "noun_id": -1,
+                             }
+                         else:
+                             logging.warning(
+@@ -244,6 +249,9 @@
+                 "reasoning_image": Sequence(Value("int64")),
+                 "answer": Value("string"),
+                 "cot": Value("string"),
++                "action_id": Value("int64"),
++                "verb_id": Value("int64"),
++                "noun_id": Value("int64"),
+             }
+         )
+ 
