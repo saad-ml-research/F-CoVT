@@ -29,6 +29,9 @@ ap.add_argument("--epochs", type=int, default=60)
 ap.add_argument("--lr", type=float, default=1e-3)
 ap.add_argument("--wd", type=float, default=0.05)
 ap.add_argument("--bs", type=int, default=256)
+ap.add_argument("--arch", default="linear", choices=["linear", "mlp"], help="fit: head type (mlp = 1 hidden layer)")
+ap.add_argument("--hidden", type=int, default=1024)
+ap.add_argument("--drop", type=float, default=0.3)
 ap.add_argument("--joint", default="", help="fit: RUN_DIR/act_head.pt, also score the head trained jointly (1 epoch)")
 a = ap.parse_args()
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
@@ -96,6 +99,19 @@ def extract(run, data_path, out):
             torch.save(done, out)
 
 
+class MLPHead(torch.nn.Module):
+    """Same outputs as fcovt_core.ActHead, with one hidden layer in between."""
+    def __init__(self, d, hidden, drop):
+        super().__init__()
+        nn = torch.nn
+        self.body = nn.Sequential(nn.LayerNorm(d), nn.Linear(d, hidden), nn.GELU(), nn.Dropout(drop))
+        self.outs = nn.ModuleList(nn.Linear(hidden, n) for n in fcovt_core.HEAD_SIZES)
+
+    def forward(self, h):
+        z = self.body(h)
+        return tuple(o(z) for o in self.outs)
+
+
 def metrics(logits3, y):
     out = {}
     for j, kind in enumerate(("action", "verb", "noun")):
@@ -119,7 +135,7 @@ def fit(tr_path, va_path, out_dir):
     idx = torch.randperm(len(X), generator=torch.Generator().manual_seed(0)).to(DEV)
     nh = len(X) // 10
     ho, fi = idx[:nh], idx[nh:]
-    head = fcovt_core.ActHead(X.shape[1]).to(DEV)
+    head = (MLPHead(X.shape[1], a.hidden, a.drop) if a.arch == "mlp" else fcovt_core.ActHead(X.shape[1])).to(DEV)
     opt = torch.optim.AdamW(head.parameters(), lr=a.lr, weight_decay=a.wd)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, a.epochs)
 
@@ -160,11 +176,11 @@ def fit(tr_path, va_path, out_dir):
         jh = jh.to(DEV).eval()
         with torch.no_grad():
             rows["joint head (1 epoch)"] = metrics(jh(Xv), Yv)
-    rows["probe (refit)"] = m
+    rows[f"probe ({a.arch})"] = m
     os.makedirs(out_dir, exist_ok=True)
-    torch.save(best_state, os.path.join(out_dir, "probe_head.pt"))
+    torch.save(best_state, os.path.join(out_dir, f"probe_head_{a.arch}.pt"))
     json.dump({"rows": rows, "best_epoch": best_ep, "heldout_loss": best, "val_loss": vloss,
-               "think": tr.get("think")}, open(os.path.join(out_dir, "probe_summary.json"), "w"), indent=1)
+               "think": tr.get("think"), "arch": a.arch, "hidden": a.hidden, "drop": a.drop}, open(os.path.join(out_dir, f"probe_summary_{a.arch}.json"), "w"), indent=1)
     print(f"\nbest epoch {best_ep}  held-out loss {best:.2f}  validation loss {vloss:.2f}  (frequency-only floor ~11.5)")
     print(f"{'validation':22s}" + "".join(f"{k + ' top1/top5/cm-rec5':>28s}" for k in ("action", "verb", "noun")))
     for name, r in rows.items():
