@@ -6,7 +6,7 @@ so any past/future split can then be studied in minutes without touching video a
 Videos are streamed one recording at a time (next one downloads while the current one is processed) and deleted.
 Frames are decoded straight at 224x224 (squashed, as 08_dino_feats.py). Feature = [CLS ; mean patch] (2048).
 Resumable: one cache file per recording.
-usage: python 09_dino_bank.py /workspace/outputs/dino_bank train validation
+usage: python 09_dino_bank.py /workspace/outputs/dino_bank train validation   (A101_LIMIT=2 for a smoke test)
 """
 import csv, json, os, queue, shutil, sys, threading, time
 os.environ.setdefault("OMP_NUM_THREADS", "8")
@@ -50,6 +50,8 @@ def frames30(q):
 
 
 todo = [s for s in seqs if not os.path.exists(os.path.join(cache, f"{s}.pt"))]
+if os.environ.get("A101_LIMIT"):                  # smoke test: only the first N recordings
+    todo = todo[: int(os.environ["A101_LIMIT"])]
 print(f"{len(seqs)} recordings, {sum(len(v) for v in by_seq.values())} questions, {len(todo)} recordings to do, "
       f"{len(NAMES)} frames per question", flush=True)
 
