@@ -24,8 +24,8 @@ ap.add_argument("cmd", choices=["extract", "fit"])
 ap.add_argument("a"); ap.add_argument("b"); ap.add_argument("c")
 ap.add_argument("--think", default="none", choices=["none", "latent", "generate", "fcovt"],
                 help="fcovt = row F's full stage-3 thought template, forced (thought tokens are fixed ids, so no generation)")
-ap.add_argument("--feats", default="answer", choices=["answer", "thoughts", "both"],
-                help="fit: answer state only (all rows), thought-block averages only, or both concatenated")
+ap.add_argument("--feats", default="answer",
+                help="fit: answer | thoughts | both, or a comma list of saved keys (h, t1, t2), e.g. h,t1")
 ap.add_argument("--blocks", type=int, default=2)
 ap.add_argument("--limit", type=int, default=0)
 ap.add_argument("--context", type=int, default=4)
@@ -151,7 +151,7 @@ def fit(tr_path, va_path, out_dir):
     torch.manual_seed(0); random.seed(0)
     tr, va = torch.load(tr_path), torch.load(va_path)
     def feats(d):
-        parts = {"answer": ["h"], "thoughts": ["t1", "t2"], "both": ["h", "t1", "t2"]}[a.feats]
+        parts = {"answer": ["h"], "thoughts": ["t1", "t2"], "both": ["h", "t1", "t2"]}.get(a.feats, a.feats.split(","))
         for k in parts:
             assert len(d.get(k, [])) == len(d["h"]), f"no '{k}' features saved (extracted without thought slots?)"
         return torch.cat([torch.stack(d[k]).float() for k in parts], 1)
@@ -196,7 +196,7 @@ def fit(tr_path, va_path, out_dir):
         pri[kind] = c.expand(len(Yv), -1).to(DEV)
     pm = metrics([pri["action"], pri["verb"], pri["noun"]], Yv)
     rows = {"frequency-only": pm}
-    if a.joint and a.feats == "answer":
+    if a.joint and a.feats in ("answer", "h"):
         jh = fcovt_core.ActHead(X.shape[1])
         jh.load_state_dict({k: v.float() for k, v in torch.load(a.joint, map_location="cpu").items()})
         jh = jh.to(DEV).eval()
