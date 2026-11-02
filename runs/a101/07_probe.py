@@ -9,8 +9,10 @@ Same protocol for every row (B, D, F), so the comparison stays fair.
   fit:     python 07_probe.py fit TRAIN_FEATS.pt VAL_FEATS.pt OUT_DIR [--epochs 60]
            (10% of train held out to pick the epoch; validation is only scored, never used for choosing)
 """
-import argparse, collections, json, math, os, random, re, sys
+import argparse, collections, json, math, os, random, re, sys, time
+os.environ.setdefault("OMP_NUM_THREADS", "8")   # 128-core pod: dozens of threads fighting over tiny CPU ops
 import torch
+torch.set_num_threads(int(os.environ["OMP_NUM_THREADS"]))
 import torch.nn.functional as F
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fcovt"))
@@ -69,6 +71,7 @@ def extract(run, data_path, out):
 
     todo = [q for q in data if q["id"] not in seen]
     print(f"{len(seen)} already done, {len(todo)} to go", flush=True)
+    t0 = time.time()
     for i, q in enumerate(todo, 1):
         text, ims = prompt(q)
         if a.think == "latent":
@@ -86,9 +89,11 @@ def extract(run, data_path, out):
             h = model(**inp, output_hidden_states=True).hidden_states[-1][0, -1]
         done["ids"].append(q["id"]); done["h"].append(h.float().cpu().half())
         done["y"].append([q["action_id"], q["verb_id"], q["noun_id"]])
-        if i % 500 == 0 or i == len(todo):
+        if i % 25 == 0 or i == len(todo):
+            sp = (time.time() - t0) / i
+            print(f"{len(done['ids'])}/{len(data)}  {sp:.2f} s/question  ~{sp*(len(todo)-i)/60:.0f} min left", flush=True)
+        if i % 250 == 0 or i == len(todo):
             torch.save(done, out)
-            print(f"{len(done['ids'])}/{len(data)}", flush=True)
 
 
 def metrics(logits3, y):
