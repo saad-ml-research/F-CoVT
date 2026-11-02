@@ -1,0 +1,28 @@
+--- a/src/trainer/future_l1_trainer.py
++++ b/src/trainer/future_l1_trainer.py
+@@ -155,6 +155,7 @@
+             if parts:
+                 self._accumulate_step_metrics(parts)
+         else:
++            _act_parts = None
+             _head = getattr(self, "act_head", None)
+             outputs = model(**inputs, output_hidden_states=_head is not None) if _head is not None else model(**inputs)
+             loss = outputs.loss
+@@ -164,7 +165,7 @@
+                 import fcovt_core as _fch
+                 _al, _ap = _fch.act_loss(_head, outputs.hidden_states[-1], inputs["input_ids"], fcovt_meta, self.act_im_end)
+                 if _al is not None:
+-                    loss = loss + _al; self._accumulate_step_metrics(_ap)
++                    loss = loss + _al; _act_parts = _ap  # logged with ce below: one accumulate call per micro-step
+ 
+         ce_loss_val = None
+         latent_loss_val = None
+@@ -194,6 +195,8 @@
+             step_log["train/latent_loss"] = latent_loss_val
+         if recon_loss_val is not None:
+             step_log["train/recon_loss"] = recon_loss_val
++        if locals().get("_act_parts"):
++            step_log.update(_act_parts)
+         if step_log:
+             self._accumulate_step_metrics(step_log)
+ 
