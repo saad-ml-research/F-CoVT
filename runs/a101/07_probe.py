@@ -53,9 +53,11 @@ def extract(run, data_path, out):
     done = torch.load(out) if os.path.exists(out) else {"ids": [], "h": [], "t1": [], "t2": [], "y": [], "think": a.think}
     fcovt_resp = fcovt_core.staged_texts({"stage": 3, "experts": [0, 1, 2]}, "")[2]
     fcovt_resp = fcovt_resp[: fcovt_resp.index("<answer>") + len("<answer>")]   # training cut the reply here (FCOVT_HEAD)
-    tid = torch.tensor([proc.tokenizer.convert_tokens_to_ids(t) for t in
-                        (fcovt_core.SEG, fcovt_core.DEP, fcovt_core.DINO, fcovt_core.LAT)], device="cuda")
+    _ids = [proc.tokenizer.convert_tokens_to_ids(t) for t in (fcovt_core.SEG, fcovt_core.DEP, fcovt_core.DINO, fcovt_core.LAT)]
+    unk = proc.tokenizer.unk_token_id
+    tid = torch.tensor([i for i in _ids if i is not None and i != unk] or [-1], device="cuda")   # B: no thought tokens
     if a.think == "fcovt":
+        assert len(tid) == 4, "this model has no thought tokens"
         print("forced reply:", repr(fcovt_resp[:160]), "...", flush=True)
     seen = set(done["ids"])
     latent = "".join(fcovt_core.block("generic") for _ in range(a.blocks))
