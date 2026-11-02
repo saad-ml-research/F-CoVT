@@ -27,6 +27,7 @@ ap.add_argument("--epochs", type=int, default=60)
 ap.add_argument("--lr", type=float, default=1e-3)
 ap.add_argument("--wd", type=float, default=0.05)
 ap.add_argument("--bs", type=int, default=256)
+ap.add_argument("--joint", default="", help="fit: RUN_DIR/act_head.pt, also score the head trained jointly (1 epoch)")
 a = ap.parse_args()
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -147,16 +148,23 @@ def fit(tr_path, va_path, out_dir):
         c = torch.bincount(Y[:, j], minlength=n).float()
         pri[kind] = c.expand(len(Yv), -1).to(DEV)
     pm = metrics([pri["action"], pri["verb"], pri["noun"]], Yv)
+    rows = {"frequency-only": pm}
+    if a.joint:
+        jh = fcovt_core.ActHead(X.shape[1])
+        jh.load_state_dict({k: v.float() for k, v in torch.load(a.joint, map_location="cpu").items()})
+        jh = jh.to(DEV).eval()
+        with torch.no_grad():
+            rows["joint head (1 epoch)"] = metrics(jh(Xv), Yv)
+    rows["probe (refit)"] = m
     os.makedirs(out_dir, exist_ok=True)
     torch.save(best_state, os.path.join(out_dir, "probe_head.pt"))
-    json.dump({"probe": m, "frequency_only": pm, "best_epoch": best_ep, "heldout_loss": best, "val_loss": vloss,
+    json.dump({"rows": rows, "best_epoch": best_ep, "heldout_loss": best, "val_loss": vloss,
                "think": tr.get("think")}, open(os.path.join(out_dir, "probe_summary.json"), "w"), indent=1)
     print(f"\nbest epoch {best_ep}  held-out loss {best:.2f}  validation loss {vloss:.2f}  (frequency-only floor ~11.5)")
-    print(f"{'':8s}{'probe top1':>11s}{'top5':>7s}{'cm-rec5':>9s}   |  frequency-only top1  top5  cm-rec5")
-    for k in ("action", "verb", "noun"):
-        p, q = m[k], pm[k]
-        print(f"{k:8s}{p['top1']:11.1f}{p['top5']:7.1f}{p['class_mean_top5_recall']:9.1f}   |  "
-              f"{q['top1']:19.1f}{q['top5']:6.1f}{q['class_mean_top5_recall']:9.1f}")
+    print(f"{'validation':22s}" + "".join(f"{k + ' top1/top5/cm-rec5':>28s}" for k in ("action", "verb", "noun")))
+    for name, r in rows.items():
+        print(f"{name:22s}" + "".join(f"{r[k]['top1']:14.1f}{r[k]['top5']:7.1f}{r[k]['class_mean_top5_recall']:7.1f}"
+                                      for k in ("action", "verb", "noun")))
 
 
 if a.cmd == "extract":
