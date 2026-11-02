@@ -11,6 +11,7 @@ usage: python 09_dino_bank.py /workspace/outputs/dino_bank train validation   (A
 import csv, json, os, queue, shutil, sys, threading, time
 os.environ.setdefault("OMP_NUM_THREADS", "8")
 os.environ.setdefault("TORCH_HOME", "/workspace/torch")
+os.environ.setdefault("HF_HOME", "/workspace/hf")         # where `hf auth login` saved the token on the pod
 import torch
 import decord
 from huggingface_hub import hf_hub_download
@@ -125,6 +126,9 @@ for sp, lst in qs.items():                        # one file per split, same ord
             continue
         ids.append(q["id"]); F.append(r["f"]); C.append(r["clamped"])
         Y.append([q["action_id"], q["verb_id"], q["noun_id"]])
+    if not ids:
+        print(f"saved {sp}: nothing (no recording of this split finished)", flush=True)
+        continue
     torch.save({"ids": ids, "feats": torch.stack(F), "clamped": torch.stack(C), "y": torch.tensor(Y),
                 "names": NAMES}, os.path.join(out_dir, f"{sp}.pt"))
     print(f"saved {sp}: {len(ids)}/{len(lst)} questions, feats {tuple(torch.stack(F).shape)}", flush=True)
