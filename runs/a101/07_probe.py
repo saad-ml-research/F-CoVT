@@ -15,13 +15,17 @@ import torch
 torch.set_num_threads(int(os.environ["OMP_NUM_THREADS"]))
 import torch.nn.functional as F
 
+os.environ.setdefault("FCOVT_STAGED_BLOCKS", "2")   # Assembly101 row F: next moment + step's result
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fcovt"))
 import fcovt_core  # noqa: E402
 
 ap = argparse.ArgumentParser()
 ap.add_argument("cmd", choices=["extract", "fit"])
 ap.add_argument("a"); ap.add_argument("b"); ap.add_argument("c")
-ap.add_argument("--think", default="none", choices=["none", "latent", "generate"])
+ap.add_argument("--think", default="none", choices=["none", "latent", "generate", "fcovt"],
+                help="fcovt = row F's full stage-3 thought template, forced (thought tokens are fixed ids, so no generation)")
+ap.add_argument("--feats", default="answer", choices=["answer", "thoughts", "both"],
+                help="fit: answer state only (all rows), thought-block averages only, or both concatenated")
 ap.add_argument("--blocks", type=int, default=2)
 ap.add_argument("--limit", type=int, default=0)
 ap.add_argument("--context", type=int, default=4)
@@ -46,7 +50,13 @@ def extract(run, data_path, out):
     model = Qwen2_5_VLForConditionalGeneration.from_pretrained(os.path.join(run, "merged"), torch_dtype=torch.bfloat16,
                                                                attn_implementation="flash_attention_2", device_map="cuda").eval()
     data = json.load(open(data_path))[: a.limit or None]
-    done = torch.load(out) if os.path.exists(out) else {"ids": [], "h": [], "y": [], "think": a.think}
+    done = torch.load(out) if os.path.exists(out) else {"ids": [], "h": [], "t1": [], "t2": [], "y": [], "think": a.think}
+    fcovt_resp = fcovt_core.staged_texts({"stage": 3, "experts": [0, 1, 2]}, "")[2]
+    fcovt_resp = fcovt_resp[: fcovt_resp.index("<answer>") + len("<answer>")]   # training cut the reply here (FCOVT_HEAD)
+    tid = torch.tensor([proc.tokenizer.convert_tokens_to_ids(t) for t in
+                        (fcovt_core.SEG, fcovt_core.DEP, fcovt_core.DINO, fcovt_core.LAT)], device="cuda")
+    if a.think == "fcovt":
+        print("forced reply:", repr(fcovt_resp[:160]), "...", flush=True)
     seen = set(done["ids"])
     latent = "".join(fcovt_core.block("generic") for _ in range(a.blocks))
 
@@ -79,6 +89,8 @@ def extract(run, data_path, out):
         text, ims = prompt(q)
         if a.think == "latent":
             text += latent + "<answer>"
+        elif a.think == "fcovt":
+            text += fcovt_resp
         elif a.think == "none":
             text += "<answer>"
         else:
@@ -89,7 +101,13 @@ def extract(run, data_path, out):
             text += gen.split("<answer>")[0].replace("<|im_end|>", "") + "<answer>"
         inp = proc(text=[text], images=ims, return_tensors="pt").to("cuda")
         with torch.no_grad():
-            h = model(**inp, output_hidden_states=True).hidden_states[-1][0, -1]
+            hid = model(**inp, output_hidden_states=True).hidden_states[-1][0]
+        h = hid[-1]
+        pos = torch.isin(inp["input_ids"][0], tid).nonzero().flatten()       # thought slots, block 1 then block 2
+        if len(pos) >= 2:
+            half = len(pos) // 2
+            done["t1"].append(hid[pos[:half]].mean(0).float().cpu().half())
+            done["t2"].append(hid[pos[half:]].mean(0).float().cpu().half())
         done["ids"].append(q["id"]); done["h"].append(h.float().cpu().half())
         done["y"].append([q["action_id"], q["verb_id"], q["noun_id"]])
         if i % 25 == 0 or i == len(todo):
@@ -130,8 +148,14 @@ def metrics(logits3, y):
 def fit(tr_path, va_path, out_dir):
     torch.manual_seed(0); random.seed(0)
     tr, va = torch.load(tr_path), torch.load(va_path)
-    X = torch.stack(tr["h"]).float().to(DEV); Y = torch.tensor(tr["y"]).to(DEV)
-    Xv = torch.stack(va["h"]).float().to(DEV); Yv = torch.tensor(va["y"]).to(DEV)
+    def feats(d):
+        parts = {"answer": ["h"], "thoughts": ["t1", "t2"], "both": ["h", "t1", "t2"]}[a.feats]
+        for k in parts:
+            assert len(d.get(k, [])) == len(d["h"]), f"no '{k}' features saved (extracted without thought slots?)"
+        return torch.cat([torch.stack(d[k]).float() for k in parts], 1)
+    X = feats(tr).to(DEV); Y = torch.tensor(tr["y"]).to(DEV)
+    Xv = feats(va).to(DEV); Yv = torch.tensor(va["y"]).to(DEV)
+    print(f"features: {a.feats}  dim {X.shape[1]}  train {len(X)}  val {len(Xv)}", flush=True)
     idx = torch.randperm(len(X), generator=torch.Generator().manual_seed(0)).to(DEV)
     nh = len(X) // 10
     ho, fi = idx[:nh], idx[nh:]
@@ -170,17 +194,17 @@ def fit(tr_path, va_path, out_dir):
         pri[kind] = c.expand(len(Yv), -1).to(DEV)
     pm = metrics([pri["action"], pri["verb"], pri["noun"]], Yv)
     rows = {"frequency-only": pm}
-    if a.joint:
+    if a.joint and a.feats == "answer":
         jh = fcovt_core.ActHead(X.shape[1])
         jh.load_state_dict({k: v.float() for k, v in torch.load(a.joint, map_location="cpu").items()})
         jh = jh.to(DEV).eval()
         with torch.no_grad():
             rows["joint head (1 epoch)"] = metrics(jh(Xv), Yv)
-    rows[f"probe ({a.arch})"] = m
+    rows[f"probe ({a.arch}, {a.feats})"] = m
     os.makedirs(out_dir, exist_ok=True)
-    torch.save(best_state, os.path.join(out_dir, f"probe_head_{a.arch}.pt"))
+    torch.save(best_state, os.path.join(out_dir, f"probe_head_{a.arch}_{a.feats}.pt"))
     json.dump({"rows": rows, "best_epoch": best_ep, "heldout_loss": best, "val_loss": vloss,
-               "think": tr.get("think"), "arch": a.arch, "hidden": a.hidden, "drop": a.drop}, open(os.path.join(out_dir, f"probe_summary_{a.arch}.json"), "w"), indent=1)
+               "think": tr.get("think"), "arch": a.arch, "hidden": a.hidden, "drop": a.drop}, open(os.path.join(out_dir, f"probe_summary_{a.arch}_{a.feats}.json"), "w"), indent=1)
     print(f"\nbest epoch {best_ep}  held-out loss {best:.2f}  validation loss {vloss:.2f}  (frequency-only floor ~11.5)")
     print(f"{'validation':22s}" + "".join(f"{k + ' top1/top5/cm-rec5':>28s}" for k in ("action", "verb", "noun")))
     for name, r in rows.items():
