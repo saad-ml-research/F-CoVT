@@ -36,6 +36,7 @@ ap.add_argument("--wd", type=float, default=0.05)
 ap.add_argument("--drop", type=float, default=0.1)
 ap.add_argument("--bs", type=int, default=256)
 ap.add_argument("--tag", default="")
+ap.add_argument("--every", type=int, default=5, help="print training progress every N epochs (0 = quiet)")
 a = ap.parse_args()
 dev = "cuda"
 SIZES = [1400, 32, 100]
@@ -123,18 +124,34 @@ def run(variant, seed):
     for ep in range(a.epochs):
         m.train()
         p = fi[torch.randperm(len(fi), device=dev)]
+        sums, nb = [0.0, 0.0], 0
         for s in range(0, len(p), a.bs):
             b = p[s:s + a.bs]
             lg, zhat = m(Ptr[b], Ntr[b], Ttr[b])
             loss = ce(lg, Ytr[b])
-            if lam and zhat is not None:
-                loss = loss + lam * F.mse_loss(zhat, Ttr[b])
+            sums[0] += loss.item(); nb += 1
+            if zhat is not None:
+                jl = F.mse_loss(zhat, Ttr[b]); sums[1] += jl.item()
+                if lam:
+                    loss = loss + lam * jl
             opt.zero_grad(); loss.backward(); opt.step(); sched.step()
         m.eval()
         with torch.no_grad():
             hl = ce(m(Ptr[ho], Ntr[ho], Ttr[ho])[0], Ytr[ho]).item()
         if hl < best[0]:
             best = (hl, {k: v.clone() for k, v in m.state_dict().items()}, ep + 1)
+        if a.every and ((ep + 1) % a.every == 0 or ep == 0):
+            with torch.no_grad():                    # validation shown for watching only; never used for choices
+                lgv, zv = m(Pva, Nva, Tva)
+            msg = (f"  [{variant} seed {seed}] epoch {ep + 1:3d}  train CE {sums[0] / nb:6.2f}"
+                   + (f"  JEPA {sums[1] / nb:.3f}{'' if lam else ' (not trained)'}" if zhat is not None else "")
+                   + f"  held-out CE {hl:6.2f}{' *' if best[2] == ep + 1 else '  '}"
+                   + f"  val verb {cm_recall(lgv[1], Yva[:, 1]):5.1f}  object {cm_recall(lgv[2], Yva[:, 2]):5.1f}")
+            if zv is not None:
+                msg += "  explained " + " ".join(
+                    f"{1 - ((zv[:, j] - Tva[:, j]) ** 2).sum().item() / ((Nva - Tva[:, j]) ** 2).sum().item():+.3f}"
+                    for j in range(len(tc)))
+            print(msg, flush=True)
     m.load_state_dict(best[1]); m.eval()
     with torch.no_grad():
         lg, zhat = m(Pva, Nva, Tva)
