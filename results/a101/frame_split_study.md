@@ -76,3 +76,26 @@ does not help. This is the setup used for model A: past-only ~28.8 verb, oracle 
 
 Reproduce: `python runs/a101/10_split_study.py /workspace/outputs/dino_bank` (ablation 1) and
 `python runs/a101/10_split_study.py /workspace/outputs/dino_bank --combos "P3+P5:T4+T3,P3+P5:T4,P3:T4+T3,P5:T4+T3,P3:T4,P5:T4"` (ablation 2).
+
+## Model A v1: JEPA-style future prediction on frozen DINOv2 (Gate 1: failed)
+
+`runs/a101/11_jepa.py`. Past P3 (8 frames, last 1.75 s) -> 2-layer temporal transformer -> state; predictor guesses
+the CHANGE from now to the DINOv2 features of T3 (+1.5 s, in the next action) and T4 (end of the next action);
+action head reads [state ; guess]. 3 seeds, mean +- sd, validation (2,000 questions), class-mean top-5 recall.
+
+| variant | verb | object | action | action top-1 |
+|---|---|---|---|---|
+| base (state only) | 30.2 +- 0.8 | 15.4 | 3.6 | 7.7 |
+| jepa (joint, CE + JEPA) | 29.9 +- 0.2 | 16.1 | 4.0 | 7.9 |
+| ctrl (same layers, no JEPA loss) | 30.5 +- 0.4 | 15.7 | 3.9 | 7.8 |
+| jepa2 (JEPA-only pretraining, then head; guess detached) | 30.8 +- 0.8 | 15.1 | 3.6 | 7.9 |
+| **oracle (real T3 + T4 features)** | **44.6 +- 0.2** | **19.5** | **6.6** | **14.1** |
+
+- Perfect imagination is worth **+14 verb**; the trained predictors capture none of it (jepa2 - base: +0.6 +- 1.1).
+- Predictability is the bottleneck: trained on the JEPA loss alone, the guess recovers only **~5%** of the change
+  from now to the future (explained +0.050 for T3, +0.057 for T4).
+- The classifier overfits fast (held-out CE best at epoch ~6 of 60 for every variant).
+
+Next (Gate 2, Nov 8), inspired by V-JEPA 2 (arXiv 2506.09985), whose own ablation on EPIC-Kitchens gets +2.3 verb
+from adding predicted future tokens (61.3 -> 63.6): video encoder (V-JEPA 2) patch tokens over 16 frames at 8 fps,
+V-JEPA 2's pretrained predictor as the imagination, attentive probe with focal loss.
