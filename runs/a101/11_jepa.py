@@ -10,6 +10,10 @@ Variants (all with the same transformer, head and budget):
   jepa    head reads s + zhat, JEPA loss on                         <- ours
   ctrl    head reads s + zhat, JEPA loss off (lambda 0)              extra layers without the future
   oracle  head reads s + the REAL future features                    ceiling (cheating)
+  jepa2   two stages: (1) transformer + predictor trained on the JEPA loss ONLY, as long as the held-out JEPA loss
+          improves (no classifier, so no early stop from classifier overfitting) -> honest "can the future be
+          predicted"; (2) head added, everything fine-tuned with CE + lambda * JEPA, guess detached (the predictor
+          stays JEPA-only). --stage2 frozen keeps transformer + predictor fixed in stage 2.
 Reported on validation: class-mean top-5 recall (verb / object / action), action top-1, and "explained"
 (1 - |zhat - z|^2 / |z_now - z|^2: share of the change from now to the target the predictor recovers).
 Epoch picked on a held-out 10% of train (CE loss); mean +- sd over seeds.
@@ -36,6 +40,9 @@ ap.add_argument("--wd", type=float, default=0.05)
 ap.add_argument("--drop", type=float, default=0.1)
 ap.add_argument("--bs", type=int, default=256)
 ap.add_argument("--tag", default="")
+ap.add_argument("--pre_epochs", type=int, default=100, help="jepa2 stage 1 epochs (JEPA loss only)")
+ap.add_argument("--pre_lr", type=float, default=1e-3)
+ap.add_argument("--stage2", default="finetune", choices=["finetune", "frozen"])
 ap.add_argument("--every", type=int, default=5, help="print training progress every N epochs (0 = quiet)")
 a = ap.parse_args()
 dev = "cuda"
@@ -74,7 +81,8 @@ class ModelA(nn.Module):
         layer = nn.TransformerEncoderLayer(d, 8, 4 * d, a.drop, batch_first=True, norm_first=True, activation="gelu")
         self.enc = nn.TransformerEncoder(layer, a.layers)
         self.norm = nn.LayerNorm(d)
-        if variant in ("jepa", "ctrl"):
+        self.detach = a.detach or variant == "jepa2"
+        if variant in ("jepa", "ctrl", "jepa2"):
             self.pred = nn.Sequential(nn.Linear(d, 2 * d), nn.GELU(), nn.Linear(2 * d, nt * D))
             nn.init.zeros_(self.pred[-1].weight); nn.init.zeros_(self.pred[-1].bias)   # starts as "copy now"
         if variant != "base":
@@ -94,7 +102,7 @@ class ModelA(nn.Module):
                 fut = zreal
             else:
                 zhat = znow[:, None] + self.pred(s).view(len(s), len(tc), D)
-                fut = zhat.detach() if a.detach else zhat
+                fut = zhat.detach() if self.detach else zhat
             h = torch.cat([s, self.fproj(fut.flatten(1))], 1)
         h = self.drop(h)
         return [o(h) for o in self.outs], zhat
@@ -112,14 +120,60 @@ def cm_recall(logits, y):
     return 100 * sum(sum(v) / len(v) for v in per.values()) / len(per)
 
 
+def explained(z, T, N):
+    return [1 - ((z[:, j] - T[:, j]) ** 2).sum().item() / ((N - T[:, j]) ** 2).sum().item() for j in range(len(tc))]
+
+
+def pretrain(m, fi, ho, seed):
+    """jepa2 stage 1: transformer + predictor on the JEPA loss only; epoch picked by held-out JEPA loss."""
+    params = [p for n, p in m.named_parameters() if not n.startswith(("fproj", "outs"))]
+    opt = torch.optim.AdamW(params, lr=a.pre_lr, weight_decay=a.wd)
+    steps = a.pre_epochs * math.ceil(len(fi) / a.bs)
+    sched = torch.optim.lr_scheduler.OneCycleLR(opt, a.pre_lr, total_steps=steps, pct_start=0.05)
+    copy_ho = F.mse_loss(Ntr[ho][:, None].expand_as(Ttr[ho]), Ttr[ho]).item()
+    best = (math.inf, None, -1)
+    for ep in range(a.pre_epochs):
+        m.train()
+        p = fi[torch.randperm(len(fi), device=dev)]
+        tot, nb = 0.0, 0
+        for s in range(0, len(p), a.bs):
+            b = p[s:s + a.bs]
+            loss = F.mse_loss(m(Ptr[b], Ntr[b])[1], Ttr[b])
+            opt.zero_grad(); loss.backward(); opt.step(); sched.step()
+            tot += loss.item(); nb += 1
+        m.eval()
+        with torch.no_grad():
+            hl = F.mse_loss(m(Ptr[ho], Ntr[ho])[1], Ttr[ho]).item()
+        if hl < best[0]:
+            best = (hl, {k: v.clone() for k, v in m.state_dict().items()}, ep + 1)
+        if a.every and ((ep + 1) % a.every == 0 or ep == 0):
+            with torch.no_grad():
+                zv = m(Pva, Nva)[1]
+            print(f"  [stage 1, seed {seed}] epoch {ep + 1:3d}  train JEPA {tot / nb:.4f}  held-out JEPA {hl:.4f}"
+                  f"{' *' if best[2] == ep + 1 else '  '} (copy-now {copy_ho:.4f})  val explained "
+                  + " ".join(f"{e:+.3f}" for e in explained(zv, Tva, Nva)), flush=True)
+    m.load_state_dict(best[1]); m.eval()
+    with torch.no_grad():
+        ex = explained(m(Pva, Nva)[1], Tva, Nva)
+    print(f"  [stage 1, seed {seed}] best epoch {best[2]}: val explained " + " ".join(f"{e:+.3f}" for e in ex), flush=True)
+    return ex, best[2]
+
+
 def run(variant, seed):
     torch.manual_seed(seed)
     perm = torch.randperm(len(Ptr), generator=torch.Generator().manual_seed(seed)).to(dev)
     ho, fi = perm[: len(perm) // 10], perm[len(perm) // 10:]
     m = ModelA(variant).to(dev)
-    opt = torch.optim.AdamW(m.parameters(), lr=a.lr, weight_decay=a.wd)
+    pre = None
+    if variant == "jepa2":
+        pre = pretrain(m, fi, ho, seed)
+        if a.stage2 == "frozen":
+            for n, p_ in m.named_parameters():
+                if not n.startswith(("fproj", "outs")):
+                    p_.requires_grad_(False)
+    opt = torch.optim.AdamW([p_ for p_ in m.parameters() if p_.requires_grad], lr=a.lr, weight_decay=a.wd)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, a.lr, total_steps=a.epochs * math.ceil(len(fi) / a.bs), pct_start=0.05)
-    lam = a.lam if variant == "jepa" else 0.0
+    lam = a.lam if variant == "jepa" or (variant == "jepa2" and a.stage2 == "finetune") else 0.0
     best = (math.inf, None, -1)
     for ep in range(a.epochs):
         m.train()
@@ -160,6 +214,10 @@ def run(variant, seed):
     if zhat is not None:
         for j, t in enumerate(a.targets.split(",")):
             r[f"explained_{t}"] = 1 - ((zhat[:, j] - Tva[:, j]) ** 2).sum().item() / ((Nva - Tva[:, j]) ** 2).sum().item()
+    if pre is not None:
+        r["stage1_epoch"] = pre[1]
+        for j, t in enumerate(a.targets.split(",")):
+            r[f"stage1_explained_{t}"] = pre[0][j]
     return r
 
 
@@ -169,13 +227,14 @@ for v in a.variants.split(","):
     all_res[v] = rs
     def ms(k):
         t = torch.tensor([r[k] for r in rs]); return f"{t.mean():5.1f} +- {t.std():3.1f}"
-    ex = "".join(f"  explained {k[10:]} {torch.tensor([r[k] for r in rs]).mean():+.3f}" for k in rs[0] if k.startswith("explained_"))
+    ex = "".join(f"  {k.replace('_', ' ')} {torch.tensor([r[k] for r in rs]).mean():+.3f}" for k in rs[0] if "explained_" in k)
     print(f"{v:7s} verb {ms('verb')} | object {ms('noun')} | action {ms('action')} | action top-1 {ms('action_top1')}"
           f" | epochs {[r['epoch'] for r in rs]}{ex}", flush=True)
 
 out = os.path.join(a.bank, f"jepa{('_' + a.tag) if a.tag else ''}.json")
 json.dump({"args": vars(a), "results": all_res}, open(out, "w"), indent=1)
-if "base" in all_res and "jepa" in all_res:
-    g = torch.tensor([j["verb"] - b["verb"] for j, b in zip(all_res["jepa"], all_res["base"])])
-    print(f"\nGate 1, verb gain jepa - base: {g.mean():+.1f} +- {g.std():.1f}  (pass: >= +2 and larger than the spread; "
-          f"explained > 0; and jepa > ctrl)")
+for v in ("jepa", "jepa2"):
+    if "base" in all_res and v in all_res:
+        g = torch.tensor([j["verb"] - b["verb"] for j, b in zip(all_res[v], all_res["base"])])
+        print(f"\nGate 1, verb gain {v} - base: {g.mean():+.1f} +- {g.std():.1f}  (pass: >= +2 and larger than the spread; "
+              f"explained > 0; and {v} > ctrl)")
