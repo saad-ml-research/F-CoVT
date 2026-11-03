@@ -18,6 +18,8 @@ ap = argparse.ArgumentParser()
 ap.add_argument("bank")
 ap.add_argument("--epochs", type=int, default=40)
 ap.add_argument("--seed", type=int, default=0)
+ap.add_argument("--combos", default="", help='oracle-only check of combined pasts/targets, e.g. "P3+P5:T4+T3,P3:T4"')
+ap.add_argument("--seeds", type=int, default=3, help="--combos: probes repeated over this many seeds (mean +- sd)")
 a = ap.parse_args()
 dev = "cuda"
 SIZES = [1400, 32, 100]
@@ -133,6 +135,31 @@ def probe(Xtr, Xva):
             "action": cm_recall(lg[0], Yva[:, 0]),
             "action_top1": 100 * (lg[0].argmax(-1) == Yva[:, 0]).float().mean().item()}
 
+
+# ----------------------------------------------------------------------------- combined pasts / targets (oracle only)
+if a.combos:
+    PK = {k.split()[0]: v for k, v in PAST.items()}
+    TK = {k.split()[0]: v for k, v in TARGET.items()}
+    rows = {}
+    for combo in a.combos.split(","):
+        ps, ts = combo.split(":")
+        times = sorted({t for p in ps.split("+") for t in PK[p]})
+        c, tc = cols(times), [col[TK[t]] for t in ts.split("+")]
+        Xtr, Xva = Ftr[:, c].flatten(1), Fva[:, c].flatten(1)
+        Otr, Ova = torch.cat([Xtr, Ftr[:, tc].flatten(1)], 1), torch.cat([Xva, Fva[:, tc].flatten(1)], 1)
+        res = {"base": [], "oracle": []}
+        for sd in range(a.seeds):
+            a.seed = sd
+            res["base"].append(probe(Xtr, Xva)); res["oracle"].append(probe(Otr, Ova))
+        rows[combo] = res
+        def ms(k, m):
+            v = torch.tensor([r[m] for r in res[k]]); return f"{v.mean():5.1f} +- {v.std():.1f}"
+        gain = torch.tensor([o["verb"] - b["verb"] for o, b in zip(res["oracle"], res["base"])])
+        print(f"{combo:14s} past {len(c):2d} frames | verb: past {ms('base','verb')}  with real future {ms('oracle','verb')}"
+              f"  gain {gain.mean():+.1f} +- {gain.std():.1f} | object: {ms('base','noun')} -> {ms('oracle','noun')}"
+              f" | action: {ms('base','action')} -> {ms('oracle','action')}", flush=True)
+    json.dump(rows, open(os.path.join(a.bank, "combos.json"), "w"), indent=1)
+    sys.exit(0)
 
 # ----------------------------------------------------------------------------- the grid
 results = {}
