@@ -65,7 +65,7 @@ def times30(q):
 
 def pool(tok, nslots):                                                # [B, nslots*256, D] -> [B, nslots, 16, D]
     B, _, D = tok.shape
-    x = tok.view(B * nslots, GRID, GRID, D).permute(0, 3, 1, 2).float()
+    x = tok.reshape(B * nslots, GRID, GRID, D).permute(0, 3, 1, 2).float()
     x = F.adaptive_avg_pool2d(x, POOL)
     return x.permute(0, 2, 3, 1).reshape(B, nslots, POOL * POOL, D).half()
 
