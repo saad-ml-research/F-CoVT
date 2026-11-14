@@ -78,7 +78,7 @@ class Probe(nn.Module):
         super().__init__()
         d = a.d
         self.inp = nn.Sequential(nn.LayerNorm(D), nn.Linear(D, d))
-        self.time = nn.Embedding(NPS + NFS, d); self.type = nn.Embedding(3, d); self.space = nn.Embedding(NSP, d)
+        self.time = nn.Embedding(NPS + NFS, d); self.kind = nn.Embedding(3, d); self.space = nn.Embedding(NSP, d)
         layer = nn.TransformerEncoderLayer(d, 8, 4 * d, a.drop, batch_first=True, norm_first=True, activation="gelu")
         self.blocks = nn.TransformerEncoder(layer, a.blocks)
         self.norm = nn.LayerNorm(d)
@@ -89,7 +89,7 @@ class Probe(nn.Module):
         self.outs = nn.ModuleList(nn.Linear(d, n) for n in SIZES)
 
     def forward(self, tok, tim, typ, spc):
-        x = self.inp(tok.float()) + self.time(tim) + self.type(typ) + self.space(spc)
+        x = self.inp(tok.float()) + self.time(tim) + self.kind(typ) + self.space(spc)
         x = self.norm(self.blocks(x))
         q, _ = self.xattn(self.q.expand(len(x), -1, -1), x, x)
         q = self.drop(self.qnorm(q))
