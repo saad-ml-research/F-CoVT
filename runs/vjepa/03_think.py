@@ -82,7 +82,7 @@ class Probe(nn.Module):
         self.qnorm = nn.LayerNorm(d)
         self.drop = nn.Dropout(a.drop)
         self.outs = nn.ModuleList(nn.Linear(d, n) for n in SIZES)
-        tim = torch.cat([torch.arange(NPS), torch.tensor(SL[:n_fut])]).repeat_interleave(NSP)
+        tim = torch.cat([torch.arange(NPS), torch.tensor(SL[:n_fut], dtype=torch.long)]).repeat_interleave(NSP)
         kind = torch.cat([torch.zeros(NPS), torch.ones(n_fut)]).long().repeat_interleave(NSP)
         spc = torch.arange(NSP).repeat(NPS + n_fut)
         self.register_buffer("tim", tim, persistent=False)
@@ -114,7 +114,7 @@ class Predictor(nn.Module):
         self.norm = nn.LayerNorm(d)
         self.out = nn.Linear(d, D)
         nn.init.zeros_(self.out.weight); nn.init.zeros_(self.out.bias)  # starts as V-JEPA 2's guess
-        self.register_buffer("tim", torch.cat([torch.arange(NPS), torch.tensor(SL)]).repeat_interleave(NSP), persistent=False)
+        self.register_buffer("tim", torch.cat([torch.arange(NPS), torch.tensor(SL, dtype=torch.long)]).repeat_interleave(NSP), persistent=False)
         self.register_buffer("kd", torch.cat([torch.zeros(NPS), torch.ones(NS)]).long().repeat_interleave(NSP), persistent=False)
         self.register_buffer("spc", torch.arange(NSP).repeat(NPS + NS), persistent=False)
 
