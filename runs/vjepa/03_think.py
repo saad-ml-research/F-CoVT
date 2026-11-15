@@ -9,6 +9,9 @@ Rows (all with the same attentive probe + focal loss + recipe as 02_probe.py; 3 
             starts from V-JEPA 2's guess and learns a correction; then frozen, probe reads past + its guess
   distill   predictor + probe trained together: focal(labels) + lam_j * JEPA + lam_kd * KL(student || oracle teacher)
             -> imagine the parts of the future that change the decision (learning with privileged information)
+  controls for distill:
+  kd           past-only probe + the same teacher KL, no predictor: is the gain just from soft labels?
+  distill_noj  distill without the JEPA loss (lam_j = 0): does grounding the guess in the real future matter?
 Reported on validation: verb / object / action class-mean top-5 recall, action top-1, and for learned guesses
 "explained" = 1 - |guess - real|^2 / |V-JEPA guess - real|^2 (> 0: better than the pretrained predictor).
 usage: python 03_think.py /workspace/outputs/vjepa_bank --rows oracle --slots 8-10        (before/during split)
@@ -151,7 +154,7 @@ def scores(lg, y):
 
 def fut_of(row, D_, idx, pred=None):
     """future tokens (raw scale) a row's probe reads, or None."""
-    if row == "enc":
+    if row in ("enc", "kd"):
         return None
     if row == "vjepa":
         return D_["vj"][idx]
@@ -218,26 +221,28 @@ def train_jepa(seed, fi, ho):
 
 def train_probe(row, seed, fi, ho, pred=None, teacher=None):
     torch.manual_seed(seed)
-    m = Probe(0 if row == "enc" else NS).to(dev)
-    params = list(m.parameters()) + (list(pred.parameters()) if row == "distill" else [])
+    m = Probe(0 if row in ("enc", "kd") else NS).to(dev)
+    learn_pred = row in DIST
+    params = list(m.parameters()) + (list(pred.parameters()) if learn_pred else [])
     opt = torch.optim.AdamW(params, lr=a.lr, weight_decay=a.wd)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, a.lr, total_steps=a.epochs * math.ceil(len(fi) / a.bs), pct_start=0.1)
     best = (-1.0, None, None, 0)
     for ep in range(a.epochs):
         m.train()
-        if row == "distill":
+        if learn_pred:
             pred.train()
         perm = fi[torch.randperm(len(fi), device=dev)]
         for s in range(0, len(perm), a.bs):
             b = perm[s:s + a.bs]
-            if row == "distill":
+            if learn_pred:
                 g = pred(norm(TR["past"][b]), norm(TR["vj"][b]))
                 lg = m(TR["past"][b], denorm(g))
             else:
                 lg = m(TR["past"][b], fut_of(row, TR, b, pred))
             loss = sum(focal(lg[j], TR["y"][b, j]) for j in range(3))
-            if row == "distill":
+            if row == "distill" and a.lam_j:
                 loss = loss + a.lam_j * F.l1_loss(g, norm(TR["real"][b]))
+            if row in KD:
                 with torch.no_grad():
                     teacher.eval(); t = teacher(TR["past"][b], TR["real"][b])
                 loss = loss + a.lam_kd * kd_loss(lg, t)
@@ -245,14 +250,14 @@ def train_probe(row, seed, fi, ho, pred=None, teacher=None):
         h = scores(predict(m, TR, row, pred, ho), TR["y"][ho])
         selv = (h["verb"] + h["noun"] + h["action"]) / 3
         if selv > best[0]:
-            best = (selv, copy.deepcopy(m.state_dict()), copy.deepcopy(pred.state_dict()) if row == "distill" else None, ep + 1)
+            best = (selv, copy.deepcopy(m.state_dict()), copy.deepcopy(pred.state_dict()) if learn_pred else None, ep + 1)
         if a.every and ((ep + 1) % a.every == 0 or ep == 0):
             v = scores(predict(m, VA, row, pred), VA["y"])
-            ex = f"  explained {explained(pred, VA):+.3f}" if row == "distill" else ""
+            ex = f"  explained {explained(pred, VA):+.3f}" if learn_pred else ""
             print(f"  [{row} seed {seed}] epoch {ep + 1:3d}  held-out mean recall {selv:5.1f}{' *' if best[3] == ep + 1 else '  '}"
                   f"  val verb {v['verb']:5.1f}  object {v['noun']:5.1f}  action {v['action']:4.1f}{ex}", flush=True)
     m.load_state_dict(best[1])
-    if row == "distill":
+    if learn_pred:
         pred.load_state_dict(best[2])
     r = scores(predict(m, VA, row, pred), VA["y"]); r["epoch"] = best[3]
     if pred is not None:
@@ -260,6 +265,7 @@ def train_probe(row, seed, fi, ho, pred=None, teacher=None):
     return r, m
 
 
+DIST, KD = ("distill", "distill_noj"), ("distill", "distill_noj", "kd")
 rows = a.rows.split(",")
 res = collections.defaultdict(list)
 for seed in range(a.seeds):
@@ -269,12 +275,13 @@ for seed in range(a.seeds):
     for row in sorted(rows, key=lambda r: r != "oracle"):              # oracle first: it is the distill teacher
         if row == "jepa":
             r, _ = train_probe(row, seed, fi, ho, pred=train_jepa(seed, fi, ho))
-        elif row == "distill":
+        elif row in KD:
             if teacher is None:
                 _, teacher = train_probe("oracle", seed, fi, ho)
             for q_ in teacher.parameters():
                 q_.requires_grad_(False)
-            r, _ = train_probe(row, seed, fi, ho, pred=Predictor().to(dev), teacher=teacher)
+            torch.manual_seed(seed)
+            r, _ = train_probe(row, seed, fi, ho, pred=Predictor().to(dev) if row in DIST else None, teacher=teacher)
         else:
             r, m = train_probe(row, seed, fi, ho)
             if row == "oracle":
@@ -290,7 +297,7 @@ for row in rows:
     ms = lambda k: (lambda t: f"{t.mean():5.1f} +- {t.std():3.1f}")(torch.tensor([r[k] for r in rs]))   # noqa: E731
     ex = f" | explained {torch.tensor([r['explained'] for r in rs]).mean():+.3f}" if "explained" in rs[0] else ""
     print(f"{row:8s} verb {ms('verb')} | object {ms('noun')} | action {ms('action')} | action top-1 {ms('action_top1')}{ex}")
-for row in ("vjepa", "jepa", "distill"):
+for row in ("vjepa", "jepa", "distill", "kd", "distill_noj"):
     if "enc" in res and row in res:
         g = torch.tensor([x["verb"] - e["verb"] for x, e in zip(res[row], res["enc"])])
         print(f"verb gain {row} - enc: {g.mean():+.1f} +- {g.std():.1f}")
