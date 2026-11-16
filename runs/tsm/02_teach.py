@@ -9,6 +9,9 @@ Same attentive probe + focal loss + recipe as the V-JEPA 2 runs. Rows:
 Validation = validation_challenge (13,494 segments, all kept). Metric: class-mean top-5 recall over the classes
 present, for verb (17), object (90), action (1,063); action top-1. Epoch picked on a held-out 10% of train.
 usage: python 02_teach.py /workspace/outputs/tsm_bank [--rows recent,hist,oracle,kd] [--seeds 3]
+sweep: --kd_grid "lam:T:feat,..." adds one kd row per setting (KD weight, temperature, feature-distillation weight);
+       feature distillation = cosine distance between the student's and the teacher's 3 query vectors.
+       e.g. --rows hist,oracle --kd_grid "1:2:0,2:2:0,1:4:0,1:2:1" 
 """
 import argparse, collections, copy, json, math, os
 import torch
@@ -29,6 +32,8 @@ ap.add_argument("--bs", type=int, default=128)
 ap.add_argument("--gamma", type=float, default=2.0)
 ap.add_argument("--lam_kd", type=float, default=1.0)
 ap.add_argument("--T", type=float, default=2.0)
+ap.add_argument("--lam_feat", type=float, default=0.0)
+ap.add_argument("--kd_grid", default="", help='extra kd rows "lam:T:feat,..." (hist student)')
 ap.add_argument("--every", type=int, default=5)
 ap.add_argument("--tag", default="")
 a = ap.parse_args()
@@ -80,13 +85,14 @@ class Probe(nn.Module):
         self.drop = nn.Dropout(a.drop)
         self.outs = nn.ModuleList(nn.Linear(d, n) for n in SIZES)
 
-    def forward(self, x, mask, tim, kind):
+    def forward(self, x, mask, tim, kind, with_q=False):
         h = self.inp(x) + self.time(tim) + self.kind(kind)
         pad = ~mask
         h = self.norm(self.blocks(h, src_key_padding_mask=pad))
         q, _ = self.xattn(self.q.expand(len(h), -1, -1), h, h, key_padding_mask=pad)
-        q = self.drop(self.qnorm(q))
-        return [self.outs[j](q[:, j]) for j in range(3)]
+        q = self.qnorm(q)
+        out = [self.outs[j](self.drop(q)[:, j]) for j in range(3)]
+        return (out, q) if with_q else out
 
 
 def focal(logits, y):
@@ -94,9 +100,9 @@ def focal(logits, y):
     return (-(1 - logp.exp()) ** a.gamma * logp).mean()
 
 
-def kd_loss(s, t):
-    return sum(F.kl_div(F.log_softmax(s[j] / a.T, -1), F.softmax(t[j] / a.T, -1), reduction="batchmean")
-               for j in range(3)) * a.T ** 2
+def kd_loss(s, t, T):
+    return sum(F.kl_div(F.log_softmax(s[j] / T, -1), F.softmax(t[j] / T, -1), reduction="batchmean")
+               for j in range(3)) * T ** 2
 
 
 def cm_recall(logits, y):
@@ -123,7 +129,9 @@ def predict(m, D_, row, idx=None):
     return [torch.cat(o) for o in outs]
 
 
-def train(row, seed, fi, ho, teacher=None):
+def train(row, seed, fi, ho, teacher=None, lam=None, T=None, feat=None):
+    lam = a.lam_kd if lam is None else lam; T = a.T if T is None else T; feat = a.lam_feat if feat is None else feat
+    student_row = "kd" if row.startswith("kd[") else row
     torch.manual_seed(seed)
     m = Probe().to(dev)
     opt = torch.optim.AdamW(m.parameters(), lr=a.lr, weight_decay=a.wd)
@@ -134,27 +142,30 @@ def train(row, seed, fi, ho, teacher=None):
         perm = fi[torch.randperm(len(fi), device=dev)]
         for s in range(0, len(perm), a.bs):
             b = perm[s:s + a.bs]
-            lg = m(*tokens(TR, row, b))
+            lg, qs = m(*tokens(TR, student_row, b), with_q=True)
             loss = sum(focal(lg[j], TR["y"][b, j]) for j in range(3))
             if teacher is not None:
                 with torch.no_grad():
-                    teacher.eval(); t = teacher(*tokens(TR, "oracle", b))
-                loss = loss + a.lam_kd * kd_loss(lg, t)
+                    teacher.eval(); t, qt = teacher(*tokens(TR, "oracle", b), with_q=True)
+                loss = loss + lam * kd_loss(lg, t, T)
+                if feat:
+                    loss = loss + feat * (1 - F.cosine_similarity(qs, qt, -1)).mean()
             opt.zero_grad(); loss.backward(); opt.step(); sched.step()
-        h = scores(predict(m, TR, row, ho), TR["y"][ho])
+        h = scores(predict(m, TR, student_row, ho), TR["y"][ho])
         sel = (h["verb"] + h["noun"] + h["action"]) / 3
         if sel > best[0]:
             best = (sel, copy.deepcopy(m.state_dict()), ep + 1)
         if a.every and ((ep + 1) % a.every == 0 or ep == 0):
-            v = scores(predict(m, VA, row), VA["y"])
+            v = scores(predict(m, VA, student_row), VA["y"])
             print(f"  [{row} seed {seed}] epoch {ep + 1:3d}  held-out mean recall {sel:5.1f}{' *' if best[2] == ep + 1 else '  '}"
                   f"  val verb {v['verb']:5.1f}  object {v['noun']:5.1f}  action {v['action']:4.1f}", flush=True)
     m.load_state_dict(best[1])
-    r = scores(predict(m, VA, row), VA["y"]); r["epoch"] = best[2]
+    r = scores(predict(m, VA, student_row), VA["y"]); r["epoch"] = best[2]
     return r, m
 
 
-rows = a.rows.split(",")
+GRID = [tuple(float(v) for v in g.split(":")) for g in a.kd_grid.split(",") if g]
+rows = a.rows.split(",") + [f"kd[{l:g},{T:g},{f:g}]" for l, T, f in GRID]
 res = collections.defaultdict(list)
 for seed in range(a.seeds):
     perm = torch.randperm(len(TR["y"]), generator=torch.Generator().manual_seed(seed)).to(dev)
@@ -166,7 +177,11 @@ for seed in range(a.seeds):
                 _, teacher = train("oracle", seed, fi, ho)
             for q_ in teacher.parameters():
                 q_.requires_grad_(False)
-            r, _ = train(row, seed, fi, ho, teacher=teacher)
+            if row.startswith("kd["):
+                l, T, f = (float(v) for v in row[3:-1].split(","))
+                r, _ = train(row, seed, fi, ho, teacher=teacher, lam=l, T=T, feat=f)
+            else:
+                r, _ = train(row, seed, fi, ho, teacher=teacher)
         else:
             r, m = train(row, seed, fi, ho)
             if row == "oracle":
@@ -180,7 +195,7 @@ for row in rows:
     rs = res[row]
     ms = lambda k: (lambda t: f"{t.mean():5.1f} +- {t.std():3.1f}")(torch.tensor([r[k] for r in rs]))   # noqa: E731
     print(f"{row:7s} verb {ms('verb')} | object {ms('noun')} | action {ms('action')} | action top-1 {ms('action_top1')}")
-for row, base in (("hist", "recent"), ("kd", "hist"), ("kd_rec", "recent")):
+for row, base in [("hist", "recent"), ("kd", "hist"), ("kd_rec", "recent")] + [(r, "hist") for r in rows if r.startswith("kd[")]:
     if row in res and base in res:
         for k in ("verb", "noun", "action"):
             g = torch.tensor([x[k] - b[k] for x, b in zip(res[row], res[base])])
