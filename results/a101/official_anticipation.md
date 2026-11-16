@@ -25,3 +25,22 @@ segments scored (13 with a cut before 2 s are skipped by their code). Patches ne
 a single fixed view, `weights_only=False`, `noun -> object` key rename, one shared lmdb environment.
 TempAgg's own code picks its best epoch on the validation set; ours picks on 10% of train held out, so the comparison
 favours TempAgg slightly. Same data (C10119 only): kd is +3.0 verb, +2.3 object, +1.6 action over TempAgg.
+
+## Ablation: KD weight x temperature, and feature distillation (2 seeds, mean)
+
+Student = history + recent (hist); teacher = oracle. Same split and metric as above.
+
+| KD weight | temperature | verb | object | action |
+|---|---|---|---|---|
+| no teacher (hist) | - | 59.5 | 32.3 | 10.9 |
+| 0.5 | 1 / 2 / 4 | 59.2 / 59.9 / 59.2 | 33.2 / 33.9 / 33.5 | 11.0 / 11.5 / 11.4 |
+| 1 | 1 / 2 / 4 | 60.3 / 60.1 / 58.2 | 33.5 / 34.0 / 33.7 | 10.7 / 11.3 / 11.5 |
+| 2 | 1 / 2 / 4 | 60.1 / 59.3 / 58.1 | 33.8 / 34.5 / 34.0 | 11.2 / 11.5 / 10.9 |
+| 4 | 1 / 2 / 4 | 60.5 / 59.2 / 58.4 | 33.8 / 34.5 / 34.5 | 11.3 / 11.2 / 10.9 |
+| 1 + feature distillation x1 / x5 | 2 | 59.9 / 59.7 | 34.3 / 34.3 | 11.3 / 10.8 |
+
+- Every setting improves object over the no-teacher student (+0.9 to +2.2).
+- Temperature 4 costs about 1 verb point; temperatures 1-2 are the useful range.
+- Best trade-offs: weight 2 / temperature 2 (object 34.5, action 11.5) and weight 4 / temperature 1 (verb 60.5).
+- Feature distillation (cosine between the 3 query vectors) adds nothing over plain KD.
+- Neighbouring settings differ by less than ~1 point, about the seed noise with 2 seeds.
