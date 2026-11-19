@@ -14,13 +14,13 @@ enc = obj[0] if isinstance(obj, (tuple, list)) else obj
 print(f"loaded {name} in {time.time() - t0:.0f}s | returned {type(obj).__name__}"
       f"{f' of {len(obj)}' if isinstance(obj, (tuple, list)) else ''} | encoder params {sum(p.numel() for p in enc.parameters()) / 1e9:.2f} B",
       flush=True)
-enc = enc.cuda().eval().to(torch.bfloat16)
+enc = enc.cuda().eval()          # fp32 weights + bf16 autocast: its rotary embeddings run in fp32
 N_SEG = 54723
 for bs in (1, 4, 8, 16):
     try:
-        x = torch.randn(bs, 3, 16, 384, 384, device="cuda", dtype=torch.bfloat16)   # [B, C, T, H, W]
+        x = torch.randn(bs, 3, 16, 384, 384, device="cuda")   # [B, C, T, H, W]
         torch.cuda.reset_peak_memory_stats(); torch.cuda.synchronize()
-        with torch.no_grad():
+        with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
             out = enc(x)
             torch.cuda.synchronize(); t = time.time()
             for _ in range(3):
