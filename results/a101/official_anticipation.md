@@ -44,3 +44,29 @@ Student = history + recent (hist); teacher = oracle. Same split and metric as ab
 - Best trade-offs: weight 2 / temperature 2 (object 34.5, action 11.5) and weight 4 / temperature 1 (verb 60.5).
 - Feature distillation (cosine between the 3 query vectors) adds nothing over plain KD.
 - Neighbouring settings differ by less than ~1 point, about the seed noise with 2 seeds.
+
+## VLM ladder: Qwen3-VL-8B (frozen) on the same set
+
+Same segments, same probe, metric and 3 seeds as above. Zero-shot = the model lists 5 "verb | object" answers
+(`runs/qwen3/02_zeroshot.py`). Probe rows use frozen Qwen3-VL features: per frame, the mean of its image tokens at a
+given LM layer (`runs/qwen3/03_features.py`, probe `runs/qwen3/04_probe.py`). History = 8 frames over the last 60 s,
+recent = 4 frames over the last 2 s. KD: lambda 2, T 2, teacher = TSM history + recent + real future.
+
+| rung | row | verb | object | action |
+|---|---|---|---|---|
+| 0 | zero-shot (recent frames, 1 run) | 32.3 | 6.5 | 0.8 |
+| 1 | VLM last prompt token | 56.0 ± 0.5 | 20.6 ± 0.4 | 5.3 ± 0.1 |
+| 1 | VLM 4 recent frames (layer 27) | 57.9 ± 1.9 | 24.6 ± 0.4 | 7.3 ± 0.1 |
+| 2a | VLM history + recent, layer 18 | 56.9 ± 0.4 | 24.5 ± 0.4 | 7.2 ± 0.3 |
+| 2a | VLM history + recent, layer 27 | 57.5 ± 1.4 | 24.8 ± 0.7 | 7.2 ± 0.3 |
+| 2a | VLM history + recent, layer 36 | 55.9 ± 2.4 | 22.4 ± 0.3 | 6.4 ± 0.2 |
+| ref | TSM history + recent | 59.9 ± 0.6 | 32.2 ± 0.6 | 10.7 ± 0.1 |
+| 3 | VLM + TSM (fuse) | 60.2 ± 1.6 | 32.1 ± 1.1 | 11.0 ± 0.3 |
+| 4 | VLM + TSM + future teaching | 58.9 ± 1.4 | 34.9 ± 0.5 | **11.5 ± 0.3** |
+| ref | TSM + future teaching | 58.7 ± 0.3 | 35.7 ± 1.0 | 11.2 ± 0.4 |
+| – | oracle teacher (sees the future) | 80.3 ± 0.2 | 46.4 ± 0.7 | 27.1 ± 0.2 |
+
+Findings: probing frozen features lifts the VLM far above zero-shot; it is competitive on verbs but weak on objects
+(mean-pooled frames, no Assembly101 training, while TSM was fine-tuned on Assembly101). VLM history adds nothing over
+the recent frames; layer 36 is worst. Adding the frozen VLM to TSM is within noise. Future teaching again helps
+objects (+2.8 over fuse).
