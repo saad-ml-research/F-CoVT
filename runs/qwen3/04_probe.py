@@ -77,12 +77,15 @@ def gpu_data(layer):
         return cache[layer]
     li = LAYERS.index(layer)
     out = {}
-    mq, sq = stats(Q["train"]["frames"][:, 8:, li]); ml, sl = stats(Q["train"]["last"][:, li:li + 1])
+    pick = lambda fr: fr[:, :, :, li] if fr.dim() == 5 else fr[:, :, li][:, :, None]   # [n, 12, cells, D]  # noqa: E731
+    mq, sq = stats(pick(Q["train"]["frames"])[:, 8:]); ml, sl = stats(Q["train"]["last"][:, li:li + 1])
     mt, st = stats(T["train"]["recent"])
     for s in ("train", "validation"):
-        fr = ((Q[s]["frames"][:, :, li].float() - mq) / sq).half()
-        out[s] = {"q_hist": fr[:, :8].to(dev), "q_rec": fr[:, 8:].to(dev),
-                  "q_hist_m": Q[s]["mask"][:, :8].to(dev), "q_last": ((Q[s]["last"][:, li:li + 1].float() - ml) / sl).half().to(dev),
+        fr = ((pick(Q[s]["frames"]).float() - mq) / sq).half()
+        n, _, c, d = fr.shape                                            # c = grid cells per frame (1 = mean)
+        out[s] = {"q_hist": fr[:, :8].reshape(n, 8 * c, d).to(dev), "q_rec": fr[:, 8:].reshape(n, 4 * c, d).to(dev),
+                  "q_hist_m": Q[s]["mask"][:, :8].repeat_interleave(c, 1).to(dev),
+                  "q_last": ((Q[s]["last"][:, li:li + 1].float() - ml) / sl).half().to(dev),
                   "t_hist": ((T[s]["hist"].float() - mt) / st).half().to(dev), "t_hist_m": T[s]["hist_mask"].to(dev),
                   "t_rec": ((T[s]["recent"].float() - mt) / st).half().to(dev),
                   "t_fut": ((T[s]["fut"].float() - mt) / st).half().to(dev), "y": Q[s]["y"].to(dev)}
@@ -107,7 +110,7 @@ class Probe(nn.Module):
         d = a.d
         self.inq = nn.Sequential(nn.LayerNorm(4096), nn.Linear(4096, d))
         self.int = nn.Sequential(nn.LayerNorm(2048), nn.Linear(2048, d))
-        self.kind = nn.Embedding(len(GROUPS), d); self.pos = nn.Embedding(32, d)
+        self.kind = nn.Embedding(len(GROUPS), d); self.pos = nn.Embedding(128, d)
         layer = nn.TransformerEncoderLayer(d, 8, 4 * d, a.drop, batch_first=True, norm_first=True, activation="gelu")
         self.blocks = nn.TransformerEncoder(layer, a.blocks)
         self.norm = nn.LayerNorm(d)
