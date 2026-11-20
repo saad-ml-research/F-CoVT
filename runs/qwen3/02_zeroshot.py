@@ -84,7 +84,11 @@ proc = AutoProcessor.from_pretrained(a.model)
 proc.tokenizer.padding_side = "left"
 model = Qwen3VLForConditionalGeneration.from_pretrained(a.model, dtype=torch.bfloat16, attn_implementation="sdpa",
                                                         device_map="cuda").eval()
-data = json.load(open(os.path.join(a.vlm, "validation.json")))[: a.limit or None]
+data = json.load(open(os.path.join(a.vlm, "validation.json")))
+ready = [q for q in data if os.path.exists(os.path.join(a.vlm, "frames", q["seq"], ".done"))]
+if len(ready) < len(data):
+    print(f"frames ready for {len(ready)} of {len(data)} validation segments (extraction still running?)", flush=True)
+data = ready[: a.limit or None]
 img = lambda q, f: Image.open(os.path.join(a.vlm, "frames", q["seq"], f"{f:06d}.jpg")).convert("RGB")   # noqa: E731
 
 done = {}
