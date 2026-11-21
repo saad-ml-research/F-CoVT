@@ -70,3 +70,21 @@ Findings: probing frozen features lifts the VLM far above zero-shot; it is compe
 (mean-pooled frames, no Assembly101 training, while TSM was fine-tuned on Assembly101). VLM history adds nothing over
 the recent frames; layer 36 is worst. Adding the frozen VLM to TSM is within noise. Future teaching again helps
 objects (+2.8 over fuse).
+
+### Option A: 3 x 3 grid per frame instead of one mean (layer 27; `runs/qwen3/05_features_grid.py`)
+
+Same probe, 3 seeds; all rows from the same run (`--tag grid3`).
+
+| row | verb | object | action |
+|---|---|---|---|
+| VLM 4 recent frames | 56.6 ± 1.3 | 23.6 ± 0.5 | 6.4 ± 0.4 |
+| VLM history + recent | 58.0 ± 1.1 | 24.4 ± 0.9 | 7.0 ± 0.7 |
+| TSM history + recent | 60.0 ± 0.6 | 32.8 ± 0.6 | 10.8 ± 0.3 |
+| VLM grid + TSM (fuse) | 61.3 ± 0.7 | 31.5 ± 1.1 | 10.7 ± 0.5 |
+| TSM + future teaching | 60.3 ± 0.7 | 34.1 ± 0.4 | 11.1 ± 0.5 |
+| **VLM grid + TSM + future teaching** | 59.7 ± 1.2 | **36.0 ± 0.6** | **11.9 ± 0.1** |
+| oracle teacher | 81.0 ± 0.9 | 45.9 ± 1.0 | 26.7 ± 0.2 |
+
+The grid does not help the VLM on its own, but with TSM and future teaching it gives our best action score so far
+(paired per seed vs TSM + teaching: object +1.9, action +0.8). The VLM adds information only once the teacher
+tells the student what to look for.
