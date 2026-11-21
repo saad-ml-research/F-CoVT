@@ -88,3 +88,21 @@ Same probe, 3 seeds; all rows from the same run (`--tag grid3`).
 The grid does not help the VLM on its own, but with TSM and future teaching it gives our best action score so far
 (paired per seed vs TSM + teaching: object +1.9, action +0.8). The VLM adds information only once the teacher
 tells the student what to look for.
+
+### Option B: past actions as label tokens (`runs/qwen3/06_recog.py`, probe `--recog --tag hist`)
+
+Last 8 past actions (ending before the cut) as tokens = learned embeddings of their action / verb / object labels.
+Predicted labels: recognizer on TSM features of each past segment (validation top-1 action 35.7, verb 62.3,
+object 45.3; train predictions out-of-fold by recording).
+
+| model | past labels (train -> test) | verb | object | action |
+|---|---|---|---|---|
+| history labels only, no video | true -> true | 60.9 ± 0.6 | 55.4 ± 0.5 | 24.9 ± 0.6 |
+| history labels only, no video | pred -> pred | 51.8 ± 0.5 | 21.6 ± 0.6 | 6.5 ± 0.2 |
+| VLM grid + TSM + future teaching | none | 59.1 ± 0.9 | 35.4 ± 0.4 | 11.3 ± 0.7 |
+| + history (upper bound) | true -> true | 62.2 ± 0.2 | 41.4 ± 0.2 | 15.8 ± 0.9 |
+| + history (AAG's way) | true -> pred | 57.1 ± 0.6 | 34.7 ± 0.1 | 10.7 ± 0.3 |
+| + history (fair) | pred -> pred | 60.2 ± 1.3 | 34.6 ± 1.0 | 11.4 ± 0.3 |
+| TSM + future teaching + history | pred -> pred | 59.4 ± 0.1 | 33.0 ± 1.0 | 11.2 ± 0.4 |
+
+True past labels alone match AAG's true-history result (24.86); fair predicted history adds nothing.
