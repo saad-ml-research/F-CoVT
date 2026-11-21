@@ -8,7 +8,8 @@
    a bit better than validation ones.)
 3. History: for each segment, the last K annotated segments of the same recording that END before the cut
    (cut = start - 30 frames), oldest first, right-aligned, -1 = none.
-Saves <out>/recog.pt = {split: {"y": [n,3], "pred": [n,3], "hist": [n,K]}, "acc": {...}}; label order action, verb, object.
+Saves <out>/recog.pt = {split: {"y": [n,3], "pred": [n,3], "prob": [n, 1064+17+90] softmax, "hist": [n,K]}, "acc"};
+label order action, verb, object.
 usage: python 06_recog.py /workspace/data/a101_feats/TSM_features/C10119_rgb /workspace/data/a101_anticip/data/CSVs
                           /workspace/outputs/recog [--K 8]
 """
@@ -136,6 +137,15 @@ def predict(m, x):
     return torch.stack([torch.cat(o) for o in out], 1)
 
 
+@torch.no_grad()
+def probs(m, x):
+    m.eval()
+    out = []
+    for s in range(0, len(x), 1024):
+        out.append(torch.cat([o.float().softmax(-1) for o in m(x[s:s + 1024])], -1).half())
+    return torch.cat(out)
+
+
 def acc(p, y):
     return {k: round(100 * (p[:, j] == y[:, j]).float().mean().item(), 1) for j, k in enumerate(("action", "verb", "noun"))}
 
@@ -144,13 +154,14 @@ seqs = sorted({r[0] for r in segs["train"]})
 fold_of = {q: i % a.folds for i, q in enumerate(seqs)}
 fold = torch.tensor([fold_of[r[0]] for r in segs["train"]], device=dev)
 pred_tr = torch.zeros_like(Y["train"])
+prob_tr = torch.zeros(len(Y["train"]), sum(SIZES), dtype=torch.float16, device=dev)
 for k in range(a.folds):
     m = fit((fold != k).nonzero().flatten(), seed=k)
     te = (fold == k).nonzero().flatten()
-    pred_tr[te] = predict(m, Xg["train"][te])
+    pred_tr[te] = predict(m, Xg["train"][te]); prob_tr[te] = probs(m, Xg["train"][te])
     print(f"fold {k + 1}/{a.folds}: top-1 {acc(pred_tr[te], Y['train'][te])} | {(time.time() - t0) / 60:.1f} min", flush=True)
 m = fit(torch.arange(len(Y["train"]), device=dev), seed=99)
-pred_va = predict(m, Xg["validation"])
+pred_va = predict(m, Xg["validation"]); prob_va = probs(m, Xg["validation"])
 ACC = {"train_out_of_fold": acc(pred_tr, Y["train"]), "validation": acc(pred_va, Y["validation"])}
 print(f"recognizer top-1 accuracy: {ACC}", flush=True)
 
@@ -172,9 +183,9 @@ def histories(rows):
 
 
 res = {"acc": ACC, "K": a.K, "sizes": SIZES}
-for s, p in (("train", pred_tr), ("validation", pred_va)):
+for s, p, pr in (("train", pred_tr, prob_tr), ("validation", pred_va, prob_va)):
     H = histories(segs[s])
-    res[s] = {"y": Y[s].cpu(), "pred": p.cpu(), "hist": H}
+    res[s] = {"y": Y[s].cpu(), "pred": p.cpu(), "prob": pr.cpu(), "hist": H}
     n = (H >= 0).sum(1).float()
     print(f"{s}: past actions per segment mean {n.mean():.1f}, none for {(n == 0).float().mean():.1%}", flush=True)
 torch.save(res, os.path.join(a.out, "recog.pt"))

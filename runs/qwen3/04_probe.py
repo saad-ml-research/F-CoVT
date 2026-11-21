@@ -64,8 +64,12 @@ GROUPS = {"q_last": 0, "q_hist": 1, "q_rec": 2, "t_hist": 3, "t_rec": 4, "t_fut"
 ROWS = {"q_last": ["q_last"], "q_rec": ["q_rec"], "q_hist": ["q_hist", "q_rec"], "tsm_hist": ["t_hist", "t_rec"],
         "tsm_kd": ["t_hist", "t_rec"], "fuse": ["q_hist", "q_rec", "t_hist", "t_rec"],
         "fuse_kd": ["q_hist", "q_rec", "t_hist", "t_rec"], "oracle": ["t_hist", "t_rec", "t_fut"], "hlab": []}
+ROWS["fuse_kdH"], ROWS["tsm_kdH"] = ROWS["fuse_kd"], ROWS["tsm_kd"]     # same students, taught by oracleH
+# teachers: oracle = TSM past + real future; oracleH = the same + the TRUE past-action labels (privileged)
+TEACH = {"oracle": ("oracle", ROWS["oracle"]), "oracleH": ("oracle+hT", ROWS["oracle"] + ["h"])}
 # history modes (row suffix): labels of the past actions used in (training, validation)
-HMODE = {"hT": ("true", "true"), "hTP": ("true", "pred"), "hP": ("pred", "pred")}
+HMODE = {"hT": ("true", "true"), "hTP": ("true", "pred"), "hP": ("pred", "pred"), "hS": ("soft", "soft")}
+PSUM = sum(SIZES)                    # soft history token = recognizer probabilities (action | verb | object)
 R = torch.load(a.recog) if a.recog else None
 if R:
     print(f"recognizer top-1 accuracy: {R['acc']}", flush=True)
@@ -105,6 +109,8 @@ def gpu_data(layer):
             for src, lab in (("true", R[s]["y"]), ("pred", R[s]["pred"])):
                 v = lab[H.clamp(min=0)]                                     # [n, K, 3]
                 out[s]["h_" + src] = torch.where(ok[..., None], v, pad).to(dev)
+            if "prob" in R[s]:
+                out[s]["h_soft"] = (R[s]["prob"][H.clamp(min=0)].float() * ok[..., None]).half().to(dev)
             m_ = ok.clone(); m_[:, -1] = True                               # last slot always on ("no history" token)
             out[s]["h_m"] = m_.to(dev)
     cache.clear(); cache[layer] = out
@@ -139,9 +145,16 @@ class Probe(nn.Module):
         self.drop = nn.Dropout(a.drop)
         self.outs = nn.ModuleList(nn.Linear(d, n) for n in SIZES)
 
+    def embed(self, x):
+        if x.dtype == torch.long:                                       # hard labels
+            return sum(e(x[..., j]) for j, e in enumerate(self.hemb))
+        if x.shape[-1] == PSUM:                                         # soft labels: expected label embedding
+            parts = x.float().split(SIZES, -1)
+            return sum(p @ e.weight[:n] for p, e, n in zip(parts, self.hemb, SIZES))
+        return (self.inq if x.shape[-1] == 4096 else self.int)(x.float())
+
     def forward(self, xs, mask, kinds, posi):
-        h = torch.cat([sum(e(x[..., j]) for j, e in enumerate(self.hemb)) if x.dtype == torch.long else
-                       (self.inq if x.shape[-1] == 4096 else self.int)(x.float()) for x in xs], 1)
+        h = torch.cat([self.embed(x) for x in xs], 1)
         h = h + self.kind(kinds) + self.pos(posi)
         pad = ~mask
         h = self.norm(self.blocks(h, src_key_padding_mask=pad))
@@ -202,7 +215,7 @@ def train(name, base, D, seed, fi, ho, teacher=None):
             loss = sum(focal(lg[j], D["train"]["y"][b, j]) for j in range(3))
             if teacher is not None:
                 with torch.no_grad():
-                    teacher.eval(); t = teacher(*tokens(D["train"], ROWS["oracle"], b))
+                    teacher[0].eval(); t = teacher[0](*tokens(D["train"], teacher[1], b, "true"))
                 loss = loss + a.lam_kd * kd_loss(lg, t)
             opt.zero_grad(); loss.backward(); opt.step(); sched.step()
         h = scores(predict(m, D["train"], groups, ho, htr), D["train"]["y"][ho])
@@ -223,18 +236,21 @@ res = collections.defaultdict(list)
 for seed in range(a.seeds):
     perm = torch.randperm(len(Q["train"]["y"]), generator=torch.Generator().manual_seed(seed)).to(dev)
     ho, fi = perm[: len(perm) // 10], perm[len(perm) // 10:]
-    teacher = None
+    teachers = {}
     for name in rows:
         base, layer = (name.split("@") + ["27"])[:2]
         D = gpu_data(int(layer))
-        if base.split("+")[0].endswith("_kd"):
-            if teacher is None:
-                r0, teacher = train("oracle", "oracle", D, seed, fi, ho)
-                res["oracle"].append(r0)
-                print(f"{'oracle':12s} seed {seed}: verb {r0['verb']:5.1f}  object {r0['noun']:5.1f}  action {r0['action']:4.1f}", flush=True)
-                for p in teacher.parameters():
+        b0 = base.split("+")[0]
+        if b0.endswith("_kd") or b0.endswith("_kdH"):
+            tk = "oracleH" if b0.endswith("_kdH") else "oracle"
+            if tk not in teachers:
+                r0, tm = train(tk, TEACH[tk][0], D, seed, fi, ho)
+                res[tk].append(r0)
+                print(f"{tk:12s} seed {seed}: verb {r0['verb']:5.1f}  object {r0['noun']:5.1f}  action {r0['action']:4.1f}", flush=True)
+                for p in tm.parameters():
                     p.requires_grad_(False)
-            r, _ = train(name, base, D, seed, fi, ho, teacher=teacher)
+                teachers[tk] = (tm, TEACH[tk][1])
+            r, _ = train(name, base, D, seed, fi, ho, teacher=teachers[tk])
         else:
             r, _ = train(name, base, D, seed, fi, ho)
         res[name].append(r)
@@ -242,7 +258,7 @@ for seed in range(a.seeds):
               f"  top-1 {r['action_top1']:4.1f}  epoch {r['epoch']}", flush=True)
 
 print(f"\n({a.seeds} seeds, mean +- sd; class-mean top-5 recall on validation_challenge, camera C10119)")
-for name in ["oracle"] * ("oracle" in res) + rows:
+for name in [t for t in TEACH if t in res] + rows:
     rs = res[name]
     ms = lambda k: (lambda t: f"{t.mean():5.1f} +- {t.std():3.1f}")(torch.tensor([r[k] for r in rs]))   # noqa: E731
     print(f"{name:12s} verb {ms('verb')} | object {ms('noun')} | action {ms('action')} | action top-1 {ms('action_top1')}")
