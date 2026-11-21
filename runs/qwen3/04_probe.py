@@ -3,7 +3,9 @@ runs: tokens -> 2 transformer blocks -> 3 queries -> verb / object / action, foc
   Qwen3-VL frame tokens (03_features.py): 8 history frames (last 60 s) + 4 recent frames (last 2 s), at a chosen layer
   Qwen3-VL last prompt token
   TSM tokens (runs/tsm/01_bank.py): 30 history windows + 8 recent windows (+ 8 future windows, teacher only)
-Rows (append @18 / @27 / @36 to pick the Qwen3-VL layer; default 27):
+Rows (append @18 / @27 / @36 to pick the Qwen3-VL layer; default 27; with --recog, append +hT / +hTP / +hP to add the
+past-action history as label tokens: true labels in train and val / true in train, predicted in val / predicted in both;
+row hlab = history labels only):
   q_last    rung 1: the VLM's last prompt token only
   q_rec     rung 1: the 4 recent VLM frames
   q_hist    rung 2a: 8 history + 4 recent VLM frames
@@ -37,6 +39,7 @@ ap.add_argument("--lam_kd", type=float, default=2.0)
 ap.add_argument("--T", type=float, default=2.0)
 ap.add_argument("--every", type=int, default=5)
 ap.add_argument("--tag", default="")
+ap.add_argument("--recog", default="", help="recog.pt from 06_recog.py: enables history rows (+hT, +hTP, +hP)")
 a = ap.parse_args()
 dev = "cuda"
 
@@ -57,10 +60,17 @@ SIZES = [int(max(Q["train"]["y"][:, j].max(), Q["validation"]["y"][:, j].max()))
 print(f"train {len(Q['train']['y'])}  val {len(Q['validation']['y'])} | VLM layers {LAYERS} | classes {SIZES}", flush=True)
 
 # token groups: name -> (source, kind id, n tokens); positions = index inside the group
-GROUPS = {"q_last": 0, "q_hist": 1, "q_rec": 2, "t_hist": 3, "t_rec": 4, "t_fut": 5}
+GROUPS = {"q_last": 0, "q_hist": 1, "q_rec": 2, "t_hist": 3, "t_rec": 4, "t_fut": 5, "h": 6}
 ROWS = {"q_last": ["q_last"], "q_rec": ["q_rec"], "q_hist": ["q_hist", "q_rec"], "tsm_hist": ["t_hist", "t_rec"],
         "tsm_kd": ["t_hist", "t_rec"], "fuse": ["q_hist", "q_rec", "t_hist", "t_rec"],
-        "fuse_kd": ["q_hist", "q_rec", "t_hist", "t_rec"], "oracle": ["t_hist", "t_rec", "t_fut"]}
+        "fuse_kd": ["q_hist", "q_rec", "t_hist", "t_rec"], "oracle": ["t_hist", "t_rec", "t_fut"], "hlab": []}
+# history modes (row suffix): labels of the past actions used in (training, validation)
+HMODE = {"hT": ("true", "true"), "hTP": ("true", "pred"), "hP": ("pred", "pred")}
+R = torch.load(a.recog) if a.recog else None
+if R:
+    print(f"recognizer top-1 accuracy: {R['acc']}", flush=True)
+    for s_ in ("train", "validation"):
+        assert torch.equal(R[s_]["y"], Q[s_]["y"]), f"{s_}: recog and VLM banks differ"
 
 
 def stats(x):
@@ -89,14 +99,22 @@ def gpu_data(layer):
                   "t_hist": ((T[s]["hist"].float() - mt) / st).half().to(dev), "t_hist_m": T[s]["hist_mask"].to(dev),
                   "t_rec": ((T[s]["recent"].float() - mt) / st).half().to(dev),
                   "t_fut": ((T[s]["fut"].float() - mt) / st).half().to(dev), "y": Q[s]["y"].to(dev)}
+        if R:
+            H = R[s]["hist"]; ok = H >= 0
+            pad = torch.tensor(SIZES)
+            for src, lab in (("true", R[s]["y"]), ("pred", R[s]["pred"])):
+                v = lab[H.clamp(min=0)]                                     # [n, K, 3]
+                out[s]["h_" + src] = torch.where(ok[..., None], v, pad).to(dev)
+            m_ = ok.clone(); m_[:, -1] = True                               # last slot always on ("no history" token)
+            out[s]["h_m"] = m_.to(dev)
     cache.clear(); cache[layer] = out
     return out
 
 
-def tokens(D, groups, idx):
+def tokens(D, groups, idx, hsrc="true"):
     xs, ms, kinds, posi = [], [], [], []
     for g in groups:
-        x = D[g][idx]
+        x = D["h_" + hsrc][idx] if g == "h" else D[g][idx]
         n = x.shape[1]
         xs.append(x)
         ms.append(D[g + "_m"][idx] if g + "_m" in D else torch.ones(len(idx), n, dtype=torch.bool, device=dev))
@@ -110,6 +128,7 @@ class Probe(nn.Module):
         d = a.d
         self.inq = nn.Sequential(nn.LayerNorm(4096), nn.Linear(4096, d))
         self.int = nn.Sequential(nn.LayerNorm(2048), nn.Linear(2048, d))
+        self.hemb = nn.ModuleList(nn.Embedding(n + 1, d) for n in SIZES)          # past action / verb / object labels
         self.kind = nn.Embedding(len(GROUPS), d); self.pos = nn.Embedding(128, d)
         layer = nn.TransformerEncoderLayer(d, 8, 4 * d, a.drop, batch_first=True, norm_first=True, activation="gelu")
         self.blocks = nn.TransformerEncoder(layer, a.blocks)
@@ -121,7 +140,8 @@ class Probe(nn.Module):
         self.outs = nn.ModuleList(nn.Linear(d, n) for n in SIZES)
 
     def forward(self, xs, mask, kinds, posi):
-        h = torch.cat([(self.inq if x.shape[-1] == 4096 else self.int)(x.float()) for x in xs], 1)
+        h = torch.cat([sum(e(x[..., j]) for j, e in enumerate(self.hemb)) if x.dtype == torch.long else
+                       (self.inq if x.shape[-1] == 4096 else self.int)(x.float()) for x in xs], 1)
         h = h + self.kind(kinds) + self.pos(posi)
         pad = ~mask
         h = self.norm(self.blocks(h, src_key_padding_mask=pad))
@@ -154,19 +174,21 @@ def scores(lg, y):
 
 
 @torch.no_grad()
-def predict(m, D, groups, idx=None):
+def predict(m, D, groups, idx=None, hsrc="true"):
     m.eval()
     idx = torch.arange(len(D["y"]), device=dev) if idx is None else idx
     outs = [[], [], []]
     for s in range(0, len(idx), 512):
-        for j, o in enumerate(m(*tokens(D, groups, idx[s:s + 512]))):
+        for j, o in enumerate(m(*tokens(D, groups, idx[s:s + 512], hsrc))):
             outs[j].append(o.float())
     return [torch.cat(o) for o in outs]
 
 
 def train(name, base, D, seed, fi, ho, teacher=None):
     torch.manual_seed(seed)
-    groups = ROWS[base]
+    base, _, hm = base.partition("+")
+    groups = ROWS[base] + (["h"] if hm else [])
+    htr, hte = HMODE[hm] if hm else ("true", "true")
     m = Probe().to(dev)
     opt = torch.optim.AdamW(m.parameters(), lr=a.lr, weight_decay=a.wd)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, a.lr, total_steps=a.epochs * math.ceil(len(fi) / a.bs), pct_start=0.1)
@@ -176,23 +198,23 @@ def train(name, base, D, seed, fi, ho, teacher=None):
         perm = fi[torch.randperm(len(fi), device=dev)]
         for s in range(0, len(perm), a.bs):
             b = perm[s:s + a.bs]
-            lg = m(*tokens(D["train"], groups, b))
+            lg = m(*tokens(D["train"], groups, b, htr))
             loss = sum(focal(lg[j], D["train"]["y"][b, j]) for j in range(3))
             if teacher is not None:
                 with torch.no_grad():
                     teacher.eval(); t = teacher(*tokens(D["train"], ROWS["oracle"], b))
                 loss = loss + a.lam_kd * kd_loss(lg, t)
             opt.zero_grad(); loss.backward(); opt.step(); sched.step()
-        h = scores(predict(m, D["train"], groups, ho), D["train"]["y"][ho])
+        h = scores(predict(m, D["train"], groups, ho, htr), D["train"]["y"][ho])
         sel = (h["verb"] + h["noun"] + h["action"]) / 3
         if sel > best[0]:
             best = (sel, copy.deepcopy(m.state_dict()), ep + 1)
         if a.every and ((ep + 1) % a.every == 0 or ep == 0):
-            v = scores(predict(m, D["validation"], groups), D["validation"]["y"])
+            v = scores(predict(m, D["validation"], groups, hsrc=hte), D["validation"]["y"])
             print(f"  [{name} seed {seed}] epoch {ep + 1:3d}  held-out mean recall {sel:5.1f}{' *' if best[2] == ep + 1 else '  '}"
                   f"  val verb {v['verb']:5.1f}  object {v['noun']:5.1f}  action {v['action']:4.1f}", flush=True)
     m.load_state_dict(best[1])
-    r = scores(predict(m, D["validation"], groups), D["validation"]["y"]); r["epoch"] = best[2]
+    r = scores(predict(m, D["validation"], groups, hsrc=hte), D["validation"]["y"]); r["epoch"] = best[2]
     return r, m
 
 
@@ -205,7 +227,7 @@ for seed in range(a.seeds):
     for name in rows:
         base, layer = (name.split("@") + ["27"])[:2]
         D = gpu_data(int(layer))
-        if base.endswith("_kd"):
+        if base.split("+")[0].endswith("_kd"):
             if teacher is None:
                 r0, teacher = train("oracle", "oracle", D, seed, fi, ho)
                 res["oracle"].append(r0)
