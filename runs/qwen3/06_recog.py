@@ -187,6 +187,7 @@ for s, p, pr in (("train", pred_tr, prob_tr), ("validation", pred_va, prob_va)):
     H = histories(segs[s])
     res[s] = {"y": Y[s].cpu(), "pred": p.cpu(), "prob": pr.cpu(), "hist": H}
     n = (H >= 0).sum(1).float()
-    print(f"{s}: past actions per segment mean {n.mean():.1f}, none for {(n == 0).float().mean():.1%}", flush=True)
+    print(f"{s}: past actions per segment mean {n.mean():.1f}, median {n.median():.0f}, max {n.max():.0f}, "
+          f"at the cap ({a.K}) {(n == a.K).float().mean():.1%}, none {(n == 0).float().mean():.1%}", flush=True)
 torch.save(res, os.path.join(a.out, "recog.pt"))
 print(f"saved {os.path.join(a.out, 'recog.pt')} | done in {(time.time() - t0) / 60:.1f} min")

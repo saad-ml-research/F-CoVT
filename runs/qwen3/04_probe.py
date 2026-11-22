@@ -66,9 +66,16 @@ ROWS = {"q_last": ["q_last"], "q_rec": ["q_rec"], "q_hist": ["q_hist", "q_rec"],
         "fuse_kd": ["q_hist", "q_rec", "t_hist", "t_rec"], "oracle": ["t_hist", "t_rec", "t_fut"], "hlab": []}
 ROWS["fuse_kdH"], ROWS["tsm_kdH"] = ROWS["fuse_kd"], ROWS["tsm_kd"]     # same students, taught by oracleH
 # teachers: oracle = TSM past + real future; oracleH = the same + the TRUE past-action labels (privileged)
-TEACH = {"oracle": ("oracle", ROWS["oracle"]), "oracleH": ("oracle+hT", ROWS["oracle"] + ["h"])}
+TEACH = {"oracle": ("oracle", ROWS["oracle"]), "oracleH": ("oracle+hT8", ROWS["oracle"] + ["h"])}   # oracleH: last 8 true labels
 # history modes (row suffix): labels of the past actions used in (training, validation)
 HMODE = {"hT": ("true", "true"), "hTP": ("true", "pred"), "hP": ("pred", "pred"), "hS": ("soft", "soft")}
+
+
+def hmode(hm):
+    """'hS' / 'hS64' / 'hTP' ... -> (train source, val source) as 'src:length'; length = last N past actions (default 8)."""
+    m = re.fullmatch(r"(hTP|hT|hP|hS)(\d*)", hm)
+    L = int(m.group(2) or 8)
+    return tuple(f"{src}:{L}" for src in HMODE[m.group(1)])
 PSUM = sum(SIZES)                    # soft history token = recognizer probabilities (action | verb | object)
 R = torch.load(a.recog) if a.recog else None
 if R:
@@ -109,21 +116,32 @@ def gpu_data(layer):
             for src, lab in (("true", R[s]["y"]), ("pred", R[s]["pred"])):
                 v = lab[H.clamp(min=0)]                                     # [n, K, 3]
                 out[s]["h_" + src] = torch.where(ok[..., None], v, pad).to(dev)
+            out[s]["h_idx"] = H.to(dev)
             if "prob" in R[s]:
-                out[s]["h_soft"] = (R[s]["prob"][H.clamp(min=0)].float() * ok[..., None]).half().to(dev)
+                out[s]["prob"] = R[s]["prob"].to(dev)                          # [n, PSUM], gathered per batch
             m_ = ok.clone(); m_[:, -1] = True                               # last slot always on ("no history" token)
             out[s]["h_m"] = m_.to(dev)
     cache.clear(); cache[layer] = out
     return out
 
 
-def tokens(D, groups, idx, hsrc="true"):
+def tokens(D, groups, idx, hsrc="true:8"):
     xs, ms, kinds, posi = [], [], [], []
     for g in groups:
-        x = D["h_" + hsrc][idx] if g == "h" else D[g][idx]
+        if g == "h":
+            src, L = hsrc.split(":"); L = int(L)
+            if src == "soft":
+                H = D["h_idx"][idx][:, -L:]
+                x = D["prob"][H.clamp(min=0)] * (H >= 0)[..., None]
+            else:
+                x = D["h_" + src][idx][:, -L:]
+            m = D["h_m"][idx][:, -L:]
+        else:
+            x = D[g][idx]
+            m = D[g + "_m"][idx] if g + "_m" in D else torch.ones(len(idx), x.shape[1], dtype=torch.bool, device=dev)
         n = x.shape[1]
         xs.append(x)
-        ms.append(D[g + "_m"][idx] if g + "_m" in D else torch.ones(len(idx), n, dtype=torch.bool, device=dev))
+        ms.append(m)
         kinds.append(torch.full((n,), GROUPS[g], device=dev)); posi.append(torch.arange(n, device=dev))
     return xs, torch.cat(ms, 1), torch.cat(kinds), torch.cat(posi)
 
@@ -135,7 +153,7 @@ class Probe(nn.Module):
         self.inq = nn.Sequential(nn.LayerNorm(4096), nn.Linear(4096, d))
         self.int = nn.Sequential(nn.LayerNorm(2048), nn.Linear(2048, d))
         self.hemb = nn.ModuleList(nn.Embedding(n + 1, d) for n in SIZES)          # past action / verb / object labels
-        self.kind = nn.Embedding(len(GROUPS), d); self.pos = nn.Embedding(128, d)
+        self.kind = nn.Embedding(len(GROUPS), d); self.pos = nn.Embedding(512, d)
         layer = nn.TransformerEncoderLayer(d, 8, 4 * d, a.drop, batch_first=True, norm_first=True, activation="gelu")
         self.blocks = nn.TransformerEncoder(layer, a.blocks)
         self.norm = nn.LayerNorm(d)
@@ -192,7 +210,7 @@ def scores(lg, y):
 
 
 @torch.no_grad()
-def predict(m, D, groups, idx=None, hsrc="true"):
+def predict(m, D, groups, idx=None, hsrc="true:8"):
     m.eval()
     idx = torch.arange(len(D["y"]), device=dev) if idx is None else idx
     outs = [[], [], []]
@@ -206,7 +224,7 @@ def train(name, base, D, seed, fi, ho, teacher=None):
     torch.manual_seed(seed)
     base, _, hm = base.partition("+")
     groups = ROWS[base] + (["h"] if hm else [])
-    htr, hte = HMODE[hm] if hm else ("true", "true")
+    htr, hte = hmode(hm) if hm else ("true:8", "true:8")
     m = Probe().to(dev)
     opt = torch.optim.AdamW(m.parameters(), lr=a.lr, weight_decay=a.wd)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, a.lr, total_steps=a.epochs * math.ceil(len(fi) / a.bs), pct_start=0.1)
@@ -220,7 +238,7 @@ def train(name, base, D, seed, fi, ho, teacher=None):
             loss = sum(focal(lg[j], D["train"]["y"][b, j]) for j in range(3))
             if teacher is not None:
                 with torch.no_grad():
-                    teacher[0].eval(); t = teacher[0](*tokens(D["train"], teacher[1], b, "true"))
+                    teacher[0].eval(); t = teacher[0](*tokens(D["train"], teacher[1], b, teacher[2]))
                 loss = loss + a.lam_kd * kd_loss(lg, t)
             opt.zero_grad(); loss.backward(); opt.step(); sched.step()
         h = scores(predict(m, D["train"], groups, ho, htr), D["train"]["y"][ho])
@@ -254,7 +272,7 @@ for seed in range(a.seeds):
                 print(f"{tk:12s} seed {seed}: verb {r0['verb']:5.1f}  object {r0['noun']:5.1f}  action {r0['action']:4.1f}", flush=True)
                 for p in tm.parameters():
                     p.requires_grad_(False)
-                teachers[tk] = (tm, TEACH[tk][1])
+                teachers[tk] = (tm, TEACH[tk][1], "true:8")
             r, _ = train(name, base, D, seed, fi, ho, teacher=teachers[tk])
         else:
             r, _ = train(name, base, D, seed, fi, ho)
