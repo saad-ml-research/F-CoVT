@@ -16,7 +16,8 @@ os.environ.setdefault("OMP_NUM_THREADS", "8")
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from PIL import Image
+import random
+from PIL import Image, ImageEnhance
 from peft import LoraConfig, get_peft_model
 from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 
@@ -40,6 +41,9 @@ ap.add_argument("--gamma", type=float, default=2.0)
 ap.add_argument("--workers", type=int, default=6)
 ap.add_argument("--seed", type=int, default=0)
 ap.add_argument("--no_ckpt", action="store_true", help="no gradient checkpointing: faster, more GPU memory")
+ap.add_argument("--lora_drop", type=float, default=0.05)
+ap.add_argument("--aug", action="store_true", help="random crop + brightness/contrast on training frames")
+ap.add_argument("--live_warm", action="store_true", help="warm-start the probe on recent-frame tokens from the LoRA prompt")
 a = ap.parse_args()
 os.makedirs(a.out, exist_ok=True)
 dev = "cuda"
@@ -205,7 +209,7 @@ def hook(_, __, out):
 lm.layers[-1].register_forward_hook(hook)
 for p in qwen.parameters():
     p.requires_grad_(False)
-cfg = LoraConfig(r=a.rank, lora_alpha=2 * a.rank, lora_dropout=0.05,
+cfg = LoraConfig(r=a.rank, lora_alpha=2 * a.rank, lora_dropout=a.lora_drop,
                  target_modules=r".*language_model\.layers\.\d+\.self_attn\.(q_proj|k_proj|v_proj|o_proj)")
 peft = get_peft_model(qwen, cfg)
 lora_params = [p for p in qwen.parameters() if p.requires_grad]
@@ -216,37 +220,9 @@ if not a.no_ckpt:
     qwen.enable_input_require_grads()
 say(f"LoRA params: {sum(p.numel() for p in lora_params) / 1e6:.1f} M | language layers kept: {len(lm.layers)}")
 
-# warm start: the student probe on CACHED tokens (recent frames from 05_features_grid.py) + KD, as in 04_probe.py
-probe = Probe().to(dev)
-if a.warm:
-    t0 = time.time()
-    wopt = torch.optim.AdamW(probe.parameters(), lr=3e-4, weight_decay=0.05)
-    wsched = torch.optim.lr_scheduler.OneCycleLR(wopt, 3e-4, total_steps=a.warm * math.ceil(N / 128), pct_start=0.1)
-    rec_c = lambda s, b: ((Q[s]["rec"][b].float() - MQ) / SQ).reshape(len(b), 4 * C, -1).to(dev)   # noqa: E731
-    for ep in range(a.warm):
-        probe.train()
-        for b in torch.randperm(N).split(128):
-            D = cached("train", b)
-            lg = probe(student_groups(D, rec_c("train", b)))
-            loss = sum(focal(lg[j], D["y"][:, j]) for j in range(3)) + a.lam_kd * kd_loss(lg, [TL[j][b].to(dev) for j in range(3)])
-            wopt.zero_grad(); loss.backward(); wopt.step(); wsched.step()
-    probe.eval(); vl = [[], [], []]
-    with torch.no_grad():
-        for b in torch.arange(len(IDX["validation"])).split(512):
-            for j, o in enumerate(probe(student_groups(cached("validation", b), rec_c("validation", b)))):
-                vl[j].append(o.float())
-    r = scores([torch.cat(o) for o in vl], Q["validation"]["y"].to(dev))
-    say(f"warm start (cached features, no LoRA) val: verb {r['verb']:.1f} object {r['noun']:.1f} action {r['action']:.1f} "
-        f"top-1 {r['action_top1']:.1f} | {(time.time() - t0) / 60:.1f} min")
-    del wopt
-opt = torch.optim.AdamW([{"params": lora_params, "lr": a.lr_lora}, {"params": probe.parameters(), "lr": a.lr_probe}],
-                        weight_decay=0.05)
-
-
-# ------------------------------------------------------------------ data: images -> processor inputs (in workers)
 class DS(torch.utils.data.Dataset):
-    def __init__(self, split, limit=0):
-        self.split, self.rows = split, IDX[split][: limit or None]
+    def __init__(self, split, limit=0, aug=False):
+        self.split, self.rows, self.aug = split, IDX[split][: limit or None], aug
 
     def __len__(self):
         return len(self.rows)
@@ -254,6 +230,13 @@ class DS(torch.utils.data.Dataset):
     def __getitem__(self, i):
         q = self.rows[i]
         ims = [Image.open(os.path.join(a.vlm, "frames", q["seq"], f"{f:06d}.jpg")).convert("RGB") for f in q["recent"]]
+        if self.aug:     # same random crop (90-100% of each side) + brightness/contrast for the 4 frames of a segment
+            W, H_ = ims[0].size
+            sc = random.uniform(0.9, 1.0); w, h = int(W * sc), int(H_ * sc)
+            x0, y0 = random.randint(0, W - w), random.randint(0, H_ - h)
+            bf, cf = random.uniform(0.85, 1.15), random.uniform(0.85, 1.15)
+            ims = [ImageEnhance.Contrast(ImageEnhance.Brightness(im.crop((x0, y0, x0 + w, y0 + h)).resize((W, H_))).enhance(bf)).enhance(cf)
+                   for im in ims]
         content = [{"type": "text", "text": "The last 2 seconds, oldest first:"}] + [{"type": "image", "image": im} for im in ims]
         content.append({"type": "text", "text": "The person is assembling or disassembling a toy vehicle. What will they do next?"})
         return i, [{"role": "user", "content": content}]
@@ -295,8 +278,8 @@ def vlm_tokens(inp):
     return (torch.stack(out) - MQg) / SQg
 
 
-def loader(split, shuffle, limit=0):
-    return torch.utils.data.DataLoader(DS(split, limit), batch_size=a.bs, shuffle=shuffle, num_workers=a.workers,
+def loader(split, shuffle, limit=0, aug=False):
+    return torch.utils.data.DataLoader(DS(split, limit, aug), batch_size=a.bs, shuffle=shuffle, num_workers=a.workers,
                                        collate_fn=collate, persistent_workers=False, prefetch_factor=2)
 
 
@@ -312,6 +295,46 @@ def evaluate(split="validation", limit=0):
     return scores([torch.cat(o) for o in outs], torch.cat(ys))
 
 
+# warm start: the student probe on CACHED tokens (recent frames from 05_features_grid.py) + KD, as in 04_probe.py
+probe = Probe().to(dev)
+if a.warm:
+    t0 = time.time()
+    wopt = torch.optim.AdamW(probe.parameters(), lr=3e-4, weight_decay=0.05)
+    wsched = torch.optim.lr_scheduler.OneCycleLR(wopt, 3e-4, total_steps=a.warm * math.ceil(N / 128), pct_start=0.1)
+    if a.live_warm:      # recent-frame tokens from the SAME prompt LoRA uses, adapters off (= frozen model)
+        REC = {}
+        with torch.no_grad(), peft.disable_adapter():
+            qwen.eval()
+            for sp in ("train", "validation"):
+                REC[sp] = torch.zeros(len(IDX[sp]), 4 * a.grid ** 2, 4096, dtype=torch.float16)
+                for idx, inp in loader(sp, False):
+                    REC[sp][idx] = vlm_tokens(inp).half().cpu()
+                say(f"live recent-frame tokens for {sp} | {(time.time() - t0) / 60:.1f} min")
+        rec_c = lambda s, b: REC[s][b].to(dev)   # noqa: E731   (already standardized by vlm_tokens)
+    else:
+        rec_c = lambda s, b: ((Q[s]["rec"][b].float() - MQ) / SQ).reshape(len(b), 4 * C, -1).to(dev)   # noqa: E731
+    for ep in range(a.warm):
+        probe.train()
+        for b in torch.randperm(N).split(128):
+            D = cached("train", b)
+            lg = probe(student_groups(D, rec_c("train", b)))
+            loss = sum(focal(lg[j], D["y"][:, j]) for j in range(3)) + a.lam_kd * kd_loss(lg, [TL[j][b].to(dev) for j in range(3)])
+            wopt.zero_grad(); loss.backward(); wopt.step(); wsched.step()
+    probe.eval(); vl = [[], [], []]
+    with torch.no_grad():
+        for b in torch.arange(len(IDX["validation"])).split(512):
+            for j, o in enumerate(probe(student_groups(cached("validation", b), rec_c("validation", b)))):
+                vl[j].append(o.float())
+    r = scores([torch.cat(o) for o in vl], Q["validation"]["y"].to(dev))
+    say(f"warm start ({'live' if a.live_warm else 'cached'} features, no LoRA) val: verb {r['verb']:.1f} object {r['noun']:.1f} action {r['action']:.1f} "
+        f"top-1 {r['action_top1']:.1f} top-5 acc {r['action_top5']:.1f} | {(time.time() - t0) / 60:.1f} min")
+    del wopt
+opt = torch.optim.AdamW([{"params": lora_params, "lr": a.lr_lora}, {"params": probe.parameters(), "lr": a.lr_probe}],
+                        weight_decay=0.05)
+
+
+# ------------------------------------------------------------------ data: images -> processor inputs (in workers)
+
 # ------------------------------------------------------------------ 3. train
 steps_per_epoch = math.ceil(N / (a.bs * a.accum))
 total = a.max_steps or a.epochs * steps_per_epoch
@@ -320,7 +343,7 @@ say(f"{steps_per_epoch} optimizer steps per epoch (batch {a.bs} x accum {a.accum
 step, seen, t1, res = 0, 0, time.time(), []
 for ep in range(a.epochs):
     qwen.train(); probe.train()
-    for k, (idx, inp) in enumerate(loader("train", True)):
+    for k, (idx, inp) in enumerate(loader("train", True, aug=a.aug)):
         D = cached("train", idx)
         lg = probe(student_groups(D, vlm_tokens(inp)))
         t = [TL[j][idx].to(dev) for j in range(3)]
