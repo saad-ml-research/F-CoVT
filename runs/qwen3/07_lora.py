@@ -27,9 +27,10 @@ ap.add_argument("--layer", type=int, default=27)
 ap.add_argument("--grid", type=int, default=3)
 ap.add_argument("--rank", type=int, default=16)
 ap.add_argument("--lr_lora", type=float, default=1e-4)
-ap.add_argument("--lr_probe", type=float, default=3e-4)
-ap.add_argument("--bs", type=int, default=8)
-ap.add_argument("--accum", type=int, default=4)
+ap.add_argument("--lr_probe", type=float, default=1e-4, help="probe lr during LoRA (after the warm start)")
+ap.add_argument("--bs", type=int, default=16)
+ap.add_argument("--accum", type=int, default=2)
+ap.add_argument("--warm", type=int, default=20, help="epochs of probe-only training on cached features before LoRA")
 ap.add_argument("--epochs", type=int, default=1)
 ap.add_argument("--max_steps", type=int, default=0, help="speed test: stop after N optimizer steps")
 ap.add_argument("--val_limit", type=int, default=0)
@@ -208,7 +209,29 @@ qwen.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant
 qwen.enable_input_require_grads()
 say(f"LoRA params: {sum(p.numel() for p in lora_params) / 1e6:.1f} M | language layers kept: {len(lm.layers)}")
 
+# warm start: the student probe on CACHED tokens (recent frames from 05_features_grid.py) + KD, as in 04_probe.py
 probe = Probe().to(dev)
+if a.warm:
+    t0 = time.time()
+    wopt = torch.optim.AdamW(probe.parameters(), lr=3e-4, weight_decay=0.05)
+    wsched = torch.optim.lr_scheduler.OneCycleLR(wopt, 3e-4, total_steps=a.warm * math.ceil(N / 128), pct_start=0.1)
+    rec_c = lambda s, b: ((Q[s]["rec"][b].float() - MQ) / SQ).reshape(len(b), 4 * C, -1).to(dev)   # noqa: E731
+    for ep in range(a.warm):
+        probe.train()
+        for b in torch.randperm(N).split(128):
+            D = cached("train", b)
+            lg = probe(student_groups(D, rec_c("train", b)))
+            loss = sum(focal(lg[j], D["y"][:, j]) for j in range(3)) + a.lam_kd * kd_loss(lg, [TL[j][b].to(dev) for j in range(3)])
+            wopt.zero_grad(); loss.backward(); wopt.step(); wsched.step()
+    probe.eval(); vl = [[], [], []]
+    with torch.no_grad():
+        for b in torch.arange(len(IDX["validation"])).split(512):
+            for j, o in enumerate(probe(student_groups(cached("validation", b), rec_c("validation", b)))):
+                vl[j].append(o.float())
+    r = scores([torch.cat(o) for o in vl], Q["validation"]["y"].to(dev))
+    say(f"warm start (cached features, no LoRA) val: verb {r['verb']:.1f} object {r['noun']:.1f} action {r['action']:.1f} "
+        f"top-1 {r['action_top1']:.1f} | {(time.time() - t0) / 60:.1f} min")
+    del wopt
 opt = torch.optim.AdamW([{"params": lora_params, "lr": a.lr_lora}, {"params": probe.parameters(), "lr": a.lr_probe}],
                         weight_decay=0.05)
 
