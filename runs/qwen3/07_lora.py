@@ -39,6 +39,7 @@ ap.add_argument("--T", type=float, default=2.0)
 ap.add_argument("--gamma", type=float, default=2.0)
 ap.add_argument("--workers", type=int, default=6)
 ap.add_argument("--seed", type=int, default=0)
+ap.add_argument("--no_ckpt", action="store_true", help="no gradient checkpointing: faster, more GPU memory")
 a = ap.parse_args()
 os.makedirs(a.out, exist_ok=True)
 dev = "cuda"
@@ -205,8 +206,9 @@ peft = get_peft_model(qwen, cfg)
 lora_params = [p for p in qwen.parameters() if p.requires_grad]
 for p in lora_params:
     p.data = p.data.float()
-qwen.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
-qwen.enable_input_require_grads()
+if not a.no_ckpt:
+    qwen.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+    qwen.enable_input_require_grads()
 say(f"LoRA params: {sum(p.numel() for p in lora_params) / 1e6:.1f} M | language layers kept: {len(lm.layers)}")
 
 # warm start: the student probe on CACHED tokens (recent frames from 05_features_grid.py) + KD, as in 04_probe.py
