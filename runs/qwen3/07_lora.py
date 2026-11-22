@@ -150,8 +150,13 @@ def cm_recall(lg, y):
 
 
 def scores(lg, y):
-    return {"action": cm_recall(lg[0], y[:, 0]), "verb": cm_recall(lg[1], y[:, 1]), "noun": cm_recall(lg[2], y[:, 2]),
-            "action_top1": 100 * (lg[0].argmax(-1) == y[:, 0]).float().mean().item()}
+    """class-mean top-5 recall (official metric) + plain top-1 / top-5 accuracy, for action / verb / noun."""
+    r = {"action": cm_recall(lg[0], y[:, 0]), "verb": cm_recall(lg[1], y[:, 1]), "noun": cm_recall(lg[2], y[:, 2])}
+    for j, k in enumerate(("action", "verb", "noun")):
+        top = lg[j].topk(5, -1).indices
+        r[f"{k}_top1"] = 100 * (top[:, 0] == y[:, j]).float().mean().item()
+        r[f"{k}_top5"] = 100 * (top == y[:, j, None]).any(-1).float().mean().item()
+    return r
 
 
 # ------------------------------------------------------------------ 1. teacher (TSM oracle) -> logits for all train segments
@@ -336,7 +341,7 @@ for ep in range(a.epochs):
         say(f"speed test done: val (first {a.val_limit or 200} segments, not comparable) {r}")
         break
     r = evaluate(limit=a.val_limit); r["epoch"] = ep + 1; res.append(r)
-    say(f"epoch {ep + 1} val: verb {r['verb']:.1f} object {r['noun']:.1f} action {r['action']:.1f} top-1 {r['action_top1']:.1f}")
+    say(f"epoch {ep + 1} val: verb {r['verb']:.1f} object {r['noun']:.1f} action {r['action']:.1f} top-1 {r['action_top1']:.1f} top-5 acc {r['action_top5']:.1f} | all {r}")
     peft.save_pretrained(os.path.join(a.out, f"lora_ep{ep + 1}"))
     torch.save(probe.state_dict(), os.path.join(a.out, f"probe_ep{ep + 1}.pt"))
     json.dump({"args": vars(a), "results": res}, open(os.path.join(a.out, "results.json"), "w"), indent=1)

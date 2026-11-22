@@ -182,8 +182,13 @@ def cm_recall(lg, y):
 
 
 def scores(lg, y):
-    return {"action": cm_recall(lg[0], y[:, 0]), "verb": cm_recall(lg[1], y[:, 1]), "noun": cm_recall(lg[2], y[:, 2]),
-            "action_top1": 100 * (lg[0].argmax(-1) == y[:, 0]).float().mean().item()}
+    """class-mean top-5 recall (official metric) + plain top-1 / top-5 accuracy, for action / verb / noun."""
+    r = {"action": cm_recall(lg[0], y[:, 0]), "verb": cm_recall(lg[1], y[:, 1]), "noun": cm_recall(lg[2], y[:, 2])}
+    for j, k in enumerate(("action", "verb", "noun")):
+        top = lg[j].topk(5, -1).indices
+        r[f"{k}_top1"] = 100 * (top[:, 0] == y[:, j]).float().mean().item()
+        r[f"{k}_top5"] = 100 * (top == y[:, j, None]).any(-1).float().mean().item()
+    return r
 
 
 @torch.no_grad()
@@ -261,5 +266,6 @@ print(f"\n({a.seeds} seeds, mean +- sd; class-mean top-5 recall on validation_ch
 for name in [t for t in TEACH if t in res] + rows:
     rs = res[name]
     ms = lambda k: (lambda t: f"{t.mean():5.1f} +- {t.std():3.1f}")(torch.tensor([r[k] for r in rs]))   # noqa: E731
-    print(f"{name:12s} verb {ms('verb')} | object {ms('noun')} | action {ms('action')} | action top-1 {ms('action_top1')}")
+    print(f"{name:12s} verb {ms('verb')} | object {ms('noun')} | action {ms('action')} | action top-1 {ms('action_top1')}"
+          f" | action top-5 acc {ms('action_top5')}")
 json.dump({"args": vars(a), "results": res}, open(os.path.join(a.q3, f"probe{('_' + a.tag) if a.tag else ''}.json"), "w"), indent=1)
