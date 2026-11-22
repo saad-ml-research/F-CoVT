@@ -106,3 +106,20 @@ object 45.3; train predictions out-of-fold by recording).
 | TSM + future teaching + history | pred -> pred | 59.4 ± 0.1 | 33.0 ± 1.0 | 11.2 ± 0.4 |
 
 True past labels alone match AAG's true-history result (24.86); fair predicted history adds nothing.
+
+### B+: privileged teacher (true past labels + future) and soft history (`--tag bplus`)
+
+oracleH = oracle + true past-action labels (teacher only). Soft history (+hS) = the recognizer's probabilities for
+each past action, turned into an expected label embedding.
+
+| model | teacher | verb | object | action | action top-1 |
+|---|---|---|---|---|---|
+| oracle (teacher) | – | 80.7 ± 0.1 | 45.8 ± 0.6 | 27.1 ± 0.3 | 35.8 ± 0.5 |
+| oracleH (teacher) | – | 82.0 ± 0.6 | 53.1 ± 0.6 | 34.0 ± 1.0 | 40.6 ± 0.2 |
+| VLM grid + TSM | oracle | 59.1 ± 0.9 | 35.3 ± 0.3 | 11.3 ± 0.6 | 11.7 ± 0.4 |
+| VLM grid + TSM | oracleH | 59.4 ± 0.8 | 34.9 ± 0.8 | 11.5 ± 0.2 | 11.6 ± 0.2 |
+| VLM grid + TSM + soft history | oracle | 61.8 ± 1.6 | 34.1 ± 1.0 | 11.6 ± 0.1 | 12.8 ± 0.9 |
+| VLM grid + TSM + soft history | oracleH | 59.1 ± 1.1 | 35.0 ± 0.6 | 11.5 ± 0.1 | 11.7 ± 0.0 |
+| TSM only | oracleH | 59.0 ± 0.8 | 33.7 ± 1.0 | 10.6 ± 0.3 | 12.2 ± 0.4 |
+
+A much stronger teacher does not make a better student: the frozen-feature students plateau at action 11.3–11.9.
