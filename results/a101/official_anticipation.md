@@ -143,3 +143,26 @@ Histories: median ~100 past actions per segment; 256 covers ~95% of segments in 
 
 With true labels, adding video hurts (with or without a teacher), likely because the released TSM features were
 fine-tuned on the training videos. Whole history does not beat the last 8; long soft history adds only +0.2.
+
+### Noise curve, aligned video history, late fusion (`--tag combo`)
+
+hN = true past labels with that share replaced by a random training segment's labels (train and test). hV = TSM
+features of each past action segment (annotated boundaries). Late fusion = sum of two models' log-probabilities.
+
+| model | verb | object | action | action top-1 | action top-5 acc |
+|---|---|---|---|---|---|
+| true labels only, 0% wrong | 60.9 ± 0.7 | 55.1 ± 0.6 | 24.4 ± 0.4 | 14.6 ± 0.5 | 41.7 ± 0.5 |
+| 10% wrong | 57.8 ± 0.3 | 51.4 ± 0.7 | 21.3 ± 0.6 | 11.9 ± 0.2 | 36.0 ± 0.4 |
+| 20% wrong | 56.4 ± 0.8 | 46.6 ± 0.6 | 18.4 ± 0.2 | 11.2 ± 1.0 | 33.4 ± 2.9 |
+| 40% wrong | 50.7 ± 0.6 | 37.4 ± 0.4 | 12.7 ± 0.0 | 8.8 ± 0.3 | 27.9 ± 1.5 |
+| 60% wrong | 45.1 ± 0.2 | 28.8 ± 1.0 | 8.3 ± 0.1 | 6.6 ± 0.5 | 23.1 ± 0.6 |
+| aligned video history only | 53.7 ± 0.6 | 28.5 ± 1.0 | 7.9 ± 0.2 | 9.5 ± 0.1 | 28.7 ± 0.2 |
+| soft history only (whole video) | 55.7 ± 0.3 | 26.0 ± 0.3 | 7.9 ± 0.3 | 9.0 ± 0.4 | 27.2 ± 0.4 |
+| VLM grid + TSM + teaching | 59.3 ± 1.3 | 35.5 ± 1.1 | 11.5 ± 0.3 | 11.5 ± 0.4 | 30.4 ± 0.6 |
+| + aligned video history (8) | 60.6 ± 1.6 | 35.7 ± 1.7 | 11.5 ± 0.2 | 12.1 ± 0.8 | 32.0 ± 3.1 |
+| + aligned video history (32) | 60.0 ± 1.3 | 35.7 ± 0.6 | 11.4 ± 0.6 | 12.2 ± 0.4 | 31.9 ± 1.6 |
+| fusion: video model + soft history | 60.9 ± 0.6 | 32.8 ± 0.8 | 11.8 ± 0.1 | 13.0 ± 0.4 | 34.7 ± 0.4 |
+| fusion: video model + aligned video history | 60.2 ± 0.7 | 33.8 ± 0.6 | 11.5 ± 0.3 | 12.7 ± 0.2 | 34.3 ± 0.5 |
+| fusion: true labels only + video model | 63.8 ± 0.4 | 49.3 ± 1.0 | 21.6 ± 0.9 | 16.8 ± 0.4 | 43.9 ± 0.5 |
+
+History alone beats the video model only below ~45% label noise (recognition above ~55% correct).
