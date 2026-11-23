@@ -40,6 +40,7 @@ ap.add_argument("--T", type=float, default=2.0)
 ap.add_argument("--every", type=int, default=5)
 ap.add_argument("--tag", default="")
 ap.add_argument("--fuse", default="", help='late fusion of val predictions: "rowA|rowB,..." (sum of log-probs)')
+ap.add_argument("--text", default="", help="text.pt from 11_text_feats.py: enables +hX (true text) / +hXP (predicted text)")
 ap.add_argument("--recog", default="", help="recog.pt from 06_recog.py: enables history rows (+hT, +hTP, +hP)")
 a = ap.parse_args()
 dev = "cuda"
@@ -70,7 +71,7 @@ ROWS["fuse_kdH"], ROWS["tsm_kdH"] = ROWS["fuse_kd"], ROWS["tsm_kd"]     # same s
 TEACH = {"oracle": ("oracle", ROWS["oracle"]), "oracleH": ("oracle+hT8", ROWS["oracle"] + ["h"])}   # oracleH: last 8 true labels
 # history modes (row suffix): labels of the past actions used in (training, validation)
 HMODE = {"hT": ("true", "true"), "hTP": ("true", "pred"), "hP": ("pred", "pred"), "hS": ("soft", "soft"),
-         "hV": ("seg", "seg")}       # hV = aligned video history: TSM features of each past action segment
+         "hV": ("seg", "seg"), "hX": ("txtT", "txtT"), "hXP": ("txtP", "txtP")}   # hX / hXP: history as text (11_text_feats.py)       # hV = aligned video history: TSM features of each past action segment
 NOISE = sorted({int(x) for x in re.findall(r"hN(\d+)", a.rows)})   # hN30 = true labels with 30% replaced at random
 
 
@@ -78,7 +79,7 @@ def hmode(hm):
     """'hS' / 'hS64' / 'hTP' ... -> (train source, val source) as 'src:length'; length = last N past actions (default 8)."""
     if re.fullmatch(r"hN\d+", hm):
         return (f"n{hm[2:]}:8",) * 2
-    m = re.fullmatch(r"(hTP|hT|hP|hS|hV)(\d*)", hm)
+    m = re.fullmatch(r"(hTP|hT|hP|hS|hV|hXP|hX)(\d*)", hm)
     L = int(m.group(2) or 8)
     return tuple(f"{src}:{L}" for src in HMODE[m.group(1)])
 PSUM = sum(SIZES)                    # soft history token = recognizer probabilities (action | verb | object)
@@ -135,6 +136,13 @@ def gpu_data(layer):
                 out[s]["prob"] = R[s]["prob"].to(dev)                          # [n, PSUM], gathered per batch
             m_ = ok.clone(); m_[:, -1] = True                               # last slot always on ("no history" token)
             out[s]["h_m"] = m_.to(dev)
+    if a.text:
+        TX = torch.load(a.text)
+        for s in ("train", "validation"):
+            for src, k in (("txtT", "true"), ("txtP", "pred")):
+                x = TX[s][k].float(); x = torch.cat([x, torch.ones_like(x[..., :1])], -1)   # 4097-d: marks text tokens
+                out[s]["txt_" + src] = x.half().to(dev)
+            out[s]["txt_m"] = TX[s]["mask"].to(dev)
     cache.clear(); cache[layer] = out
     return out
 
@@ -144,6 +152,11 @@ def tokens(D, groups, idx, hsrc="true:8"):
     for g in groups:
         if g == "h":
             src, L = hsrc.split(":"); L = int(L)
+            if src.startswith("txt"):
+                x, m = D["txt_" + src][idx][:, -L:], D["txt_m"][idx][:, -L:]
+                n = x.shape[1]; xs.append(x); ms.append(m)
+                kinds.append(torch.full((n,), GROUPS[g], device=dev)); posi.append(torch.arange(n, device=dev))
+                continue
             if src in ("soft", "seg"):
                 H = D["h_idx"][idx][:, -L:]
                 x = D["prob" if src == "soft" else "seg"][H.clamp(min=0)] * (H >= 0)[..., None]
@@ -166,7 +179,8 @@ class Probe(nn.Module):
         d = a.d
         self.inq = nn.Sequential(nn.LayerNorm(4096), nn.Linear(4096, d))
         self.int = nn.Sequential(nn.LayerNorm(2048), nn.Linear(2048, d))
-        self.hemb = nn.ModuleList(nn.Embedding(n + 1, d) for n in SIZES)          # past action / verb / object labels
+        self.hemb = nn.ModuleList(nn.Embedding(n + 1, d) for n in SIZES)
+        self.intx = nn.Sequential(nn.LayerNorm(4096), nn.Linear(4096, d))                # history as text (VLM language states)          # past action / verb / object labels
         self.kind = nn.Embedding(len(GROUPS), d); self.pos = nn.Embedding(512, d)
         layer = nn.TransformerEncoderLayer(d, 8, 4 * d, a.drop, batch_first=True, norm_first=True, activation="gelu")
         self.blocks = nn.TransformerEncoder(layer, a.blocks)
@@ -180,6 +194,8 @@ class Probe(nn.Module):
     def embed(self, x):
         if x.dtype == torch.long:                                       # hard labels
             return sum(e(x[..., j]) for j, e in enumerate(self.hemb))
+        if x.shape[-1] == 4097:
+            return self.intx(x[..., :4096].float())
         if x.shape[-1] == PSUM:                                         # soft labels: expected label embedding
             parts = x.float().split(SIZES, -1)
             return sum(p @ e.weight[:n] for p, e, n in zip(parts, self.hemb, SIZES))
