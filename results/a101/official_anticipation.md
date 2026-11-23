@@ -166,3 +166,19 @@ features of each past action segment (annotated boundaries). Late fusion = sum o
 | fusion: true labels only + video model | 63.8 ± 0.4 | 49.3 ± 1.0 | 21.6 ± 0.9 | 16.8 ± 0.4 | 43.9 ± 0.5 |
 
 History alone beats the video model only below ~45% label noise (recognition above ~55% correct).
+
+### History as text through the frozen VLM (`runs/qwen3/11_text_feats.py`, probe `--tag text`)
+
+Each past step = mean of its words' layer-27 states in "Steps so far, oldest first: ...; ..." (no images, last 8).
+
+| model | history given as | verb | object | action | action top-1 | action top-5 acc |
+|---|---|---|---|---|---|---|
+| history only | true labels, learned vectors | 61.2 ± 0.4 | 55.7 ± 0.9 | 24.8 ± 0.4 | 14.3 ± 0.1 | 41.6 ± 0.6 |
+| history only | true labels as text | 62.1 ± 0.2 | 54.1 ± 0.5 | 22.3 ± 0.1 | 14.5 ± 0.2 | 41.3 ± 0.3 |
+| history only | predicted labels, learned vectors | 51.5 ± 0.4 | 21.8 ± 0.2 | 6.4 ± 0.3 | 8.5 ± 0.0 | 25.3 ± 0.6 |
+| history only | predicted labels as text | 53.0 ± 0.2 | 22.9 ± 0.4 | 6.9 ± 0.2 | 8.8 ± 0.2 | 25.7 ± 0.6 |
+| VLM grid + TSM + teaching | none | 58.1 ± 0.9 | 34.6 ± 0.4 | 11.2 ± 0.6 | 11.6 ± 0.4 | 30.6 ± 1.2 |
+| + predicted text history | predicted as text | 61.9 ± 1.1 | 34.5 ± 0.4 | 11.5 ± 0.4 | 12.6 ± 0.9 | 33.1 ± 2.2 |
+| late fusion with predicted-text-only model | predicted as text | 60.0 ± 0.3 | 30.4 ± 0.2 | 10.5 ± 0.3 | 13.0 ± 0.4 | 34.5 ± 1.0 |
+
+Text does not beat learned label vectors; history mainly helps the verb and accuracy, not class-mean action recall.
