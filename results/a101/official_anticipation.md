@@ -123,3 +123,23 @@ each past action, turned into an expected label embedding.
 | TSM only | oracleH | 59.0 ± 0.8 | 33.7 ± 1.0 | 10.6 ± 0.3 | 12.2 ± 0.4 |
 
 A much stronger teacher does not make a better student: the frozen-feature students plateau at action 11.3–11.9.
+
+### True-history setting and long history (`--tag hist2`, recognizer with 256-action histories)
+
+Histories: median ~100 past actions per segment; 256 covers ~95% of segments in full.
+
+| model | setting | verb | object | action | action top-1 | action top-5 acc |
+|---|---|---|---|---|---|---|
+| true labels only, last 8 | true history | 60.9 ± 0.7 | 55.1 ± 0.6 | 24.4 ± 0.4 | 14.6 ± 0.5 | 41.7 ± 0.5 |
+| true labels only, whole history | true history | 60.5 ± 0.4 | 53.0 ± 1.3 | 23.2 ± 0.7 | 14.1 ± 0.3 | 40.9 ± 0.5 |
+| video + last 8 true labels, no teacher | true history | 62.3 ± 1.1 | 40.6 ± 1.5 | 17.9 ± 0.3 | 14.9 ± 0.8 | 38.6 ± 2.1 |
+| video + whole true history, no teacher | true history | 62.3 ± 0.6 | 39.1 ± 1.2 | 16.0 ± 0.7 | 13.8 ± 0.4 | 36.7 ± 1.0 |
+| video + last 8 true labels, history-aware teacher | true history | 64.5 ± 1.6 | 42.4 ± 0.1 | 18.3 ± 0.8 | 16.2 ± 0.6 | 40.1 ± 2.8 |
+| video + soft history, last 8 | fair | 59.3 ± 0.8 | 34.8 ± 0.7 | 11.3 ± 0.6 | 11.7 ± 0.4 | 30.0 ± 0.9 |
+| video + soft history, whole video | fair | 59.3 ± 1.0 | 35.6 ± 0.8 | 11.5 ± 0.5 | 12.0 ± 1.0 | 30.7 ± 2.4 |
+| soft history only, whole video | fair | 55.7 ± 0.3 | 26.0 ± 0.3 | 7.9 ± 0.3 | 9.0 ± 0.4 | 27.2 ± 0.4 |
+| oracle teacher | teacher | 80.5 ± 0.2 | 45.9 ± 1.0 | 27.1 ± 0.2 | 36.2 ± 0.1 | 58.5 ± 0.3 |
+| oracleH teacher (+ last 8 true labels) | teacher | 81.3 ± 0.4 | 52.8 ± 0.9 | 34.5 ± 0.6 | 41.1 ± 0.3 | 64.1 ± 0.2 |
+
+With true labels, adding video hurts (with or without a teacher), likely because the released TSM features were
+fine-tuned on the training videos. Whole history does not beat the last 8; long soft history adds only +0.2.
