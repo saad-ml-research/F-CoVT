@@ -185,7 +185,8 @@ def histories(rows):
 res = {"acc": ACC, "K": a.K, "sizes": SIZES}
 for s, p, pr in (("train", pred_tr, prob_tr), ("validation", pred_va, prob_va)):
     H = histories(segs[s])
-    res[s] = {"y": Y[s].cpu(), "pred": p.cpu(), "prob": pr.cpu(), "hist": H}
+    res[s] = {"y": Y[s].cpu(), "pred": p.cpu(), "prob": pr.cpu(), "hist": H,
+              "seg": torch.from_numpy(X[s]).float().max(1).values.half()}      # [n, 2048] TSM features of each segment
     n = (H >= 0).sum(1).float()
     print(f"{s}: past actions per segment mean {n.mean():.1f}, median {n.median():.0f}, max {n.max():.0f}, "
           f"at the cap ({a.K}) {(n == a.K).float().mean():.1%}, none {(n == 0).float().mean():.1%}", flush=True)

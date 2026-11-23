@@ -18,7 +18,7 @@ The VLM and TSM banks list the same segments in the same order (checked on the l
 usage: python 04_probe.py /workspace/outputs/q3_feats /workspace/outputs/tsm_bank
        [--rows q_last,q_rec,q_hist@18,q_hist@27,q_hist@36,fuse,fuse_kd,tsm_hist,tsm_kd] [--seeds 3]
 """
-import argparse, collections, copy, glob, json, math, os, re
+import argparse, collections, copy, glob, json, math, os, re, time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -39,6 +39,7 @@ ap.add_argument("--lam_kd", type=float, default=2.0)
 ap.add_argument("--T", type=float, default=2.0)
 ap.add_argument("--every", type=int, default=5)
 ap.add_argument("--tag", default="")
+ap.add_argument("--fuse", default="", help='late fusion of val predictions: "rowA|rowB,..." (sum of log-probs)')
 ap.add_argument("--recog", default="", help="recog.pt from 06_recog.py: enables history rows (+hT, +hTP, +hP)")
 a = ap.parse_args()
 dev = "cuda"
@@ -68,12 +69,16 @@ ROWS["fuse_kdH"], ROWS["tsm_kdH"] = ROWS["fuse_kd"], ROWS["tsm_kd"]     # same s
 # teachers: oracle = TSM past + real future; oracleH = the same + the TRUE past-action labels (privileged)
 TEACH = {"oracle": ("oracle", ROWS["oracle"]), "oracleH": ("oracle+hT8", ROWS["oracle"] + ["h"])}   # oracleH: last 8 true labels
 # history modes (row suffix): labels of the past actions used in (training, validation)
-HMODE = {"hT": ("true", "true"), "hTP": ("true", "pred"), "hP": ("pred", "pred"), "hS": ("soft", "soft")}
+HMODE = {"hT": ("true", "true"), "hTP": ("true", "pred"), "hP": ("pred", "pred"), "hS": ("soft", "soft"),
+         "hV": ("seg", "seg")}       # hV = aligned video history: TSM features of each past action segment
+NOISE = sorted({int(x) for x in re.findall(r"hN(\d+)", a.rows)})   # hN30 = true labels with 30% replaced at random
 
 
 def hmode(hm):
     """'hS' / 'hS64' / 'hTP' ... -> (train source, val source) as 'src:length'; length = last N past actions (default 8)."""
-    m = re.fullmatch(r"(hTP|hT|hP|hS)(\d*)", hm)
+    if re.fullmatch(r"hN\d+", hm):
+        return (f"n{hm[2:]}:8",) * 2
+    m = re.fullmatch(r"(hTP|hT|hP|hS|hV)(\d*)", hm)
     L = int(m.group(2) or 8)
     return tuple(f"{src}:{L}" for src in HMODE[m.group(1)])
 PSUM = sum(SIZES)                    # soft history token = recognizer probabilities (action | verb | object)
@@ -117,6 +122,15 @@ def gpu_data(layer):
                 v = lab[H.clamp(min=0)]                                     # [n, K, 3]
                 out[s]["h_" + src] = torch.where(ok[..., None], v, pad).to(dev)
             out[s]["h_idx"] = H.to(dev)
+            if "seg" in R[s]:
+                out[s]["seg"] = ((R[s]["seg"].float() - mt) / st).half().to(dev)
+            g = torch.Generator().manual_seed(123 + (s == "validation"))
+            for p in NOISE:      # replace p% of the history slots by a random TRAIN segment's (action, verb, object)
+                v = R[s]["y"][H.clamp(min=0)]
+                rnd = R["train"]["y"][torch.randint(len(R["train"]["y"]), H.shape, generator=g)]
+                flip = torch.rand(H.shape, generator=g) < p / 100
+                v = torch.where(flip[..., None], rnd, v)
+                out[s][f"h_n{p}"] = torch.where(ok[..., None], v, pad).to(dev)
             if "prob" in R[s]:
                 out[s]["prob"] = R[s]["prob"].to(dev)                          # [n, PSUM], gathered per batch
             m_ = ok.clone(); m_[:, -1] = True                               # last slot always on ("no history" token)
@@ -130,9 +144,9 @@ def tokens(D, groups, idx, hsrc="true:8"):
     for g in groups:
         if g == "h":
             src, L = hsrc.split(":"); L = int(L)
-            if src == "soft":
+            if src in ("soft", "seg"):
                 H = D["h_idx"][idx][:, -L:]
-                x = D["prob"][H.clamp(min=0)] * (H >= 0)[..., None]
+                x = D["prob" if src == "soft" else "seg"][H.clamp(min=0)] * (H >= 0)[..., None]
             else:
                 x = D["h_" + src][idx][:, -L:]
             m = D["h_m"][idx][:, -L:]
@@ -250,13 +264,30 @@ def train(name, base, D, seed, fi, ho, teacher=None):
             print(f"  [{name} seed {seed}] epoch {ep + 1:3d}  held-out mean recall {sel:5.1f}{' *' if best[2] == ep + 1 else '  '}"
                   f"  val verb {v['verb']:5.1f}  object {v['noun']:5.1f}  action {v['action']:4.1f}", flush=True)
     m.load_state_dict(best[1])
-    r = scores(predict(m, D["validation"], groups, hsrc=hte), D["validation"]["y"]); r["epoch"] = best[2]
+    lg = predict(m, D["validation"], groups, hsrc=hte)
+    VAL[name] = [F.log_softmax(o, -1).half() for o in lg]                 # kept for late fusion
+    r = scores(lg, D["validation"]["y"]); r["epoch"] = best[2]
     return r, m
 
 
 rows = a.rows.split(",")
+FUSE = [f.split("|") for f in a.fuse.split(",") if f]
 res = collections.defaultdict(list)
+VAL, TIMES, t_start = {}, {}, time.time()
+JOBS = rows + [t for t in ("oracle", "oracleH") if any(r_.split("@")[0].split("+")[0].endswith("_kdH" if t == "oracleH" else "_kd") for r_ in rows)]
+
+
+def eta(seed, done_names):
+    """minutes left: known per-row times (from seed 0), mean time for rows not seen yet."""
+    known = list(TIMES.values()); avg = sum(known) / len(known) if known else 0
+    left = [n for n in JOBS if n not in done_names] + JOBS * (a.seeds - seed - 1)
+    m = sum(TIMES.get(n, avg) for n in left) / 60
+    fin = time.strftime("%H:%M UTC", time.gmtime(time.time() + m * 60))
+    return f"[timer] {(time.time() - t_start) / 60:.0f} min elapsed, ~{m:.0f} min left (done around {fin})"
+
+
 for seed in range(a.seeds):
+    done_names = []
     perm = torch.randperm(len(Q["train"]["y"]), generator=torch.Generator().manual_seed(seed)).to(dev)
     ho, fi = perm[: len(perm) // 10], perm[len(perm) // 10:]
     teachers = {}
@@ -267,21 +298,32 @@ for seed in range(a.seeds):
         if b0.endswith("_kd") or b0.endswith("_kdH"):
             tk = "oracleH" if b0.endswith("_kdH") else "oracle"
             if tk not in teachers:
+                t_ = time.time()
                 r0, tm = train(tk, TEACH[tk][0], D, seed, fi, ho)
+                TIMES.setdefault(tk, time.time() - t_); done_names.append(tk)
                 res[tk].append(r0)
                 print(f"{tk:12s} seed {seed}: verb {r0['verb']:5.1f}  object {r0['noun']:5.1f}  action {r0['action']:4.1f}", flush=True)
                 for p in tm.parameters():
                     p.requires_grad_(False)
                 teachers[tk] = (tm, TEACH[tk][1], "true:8")
+            t_ = time.time()
             r, _ = train(name, base, D, seed, fi, ho, teacher=teachers[tk])
         else:
+            t_ = time.time()
             r, _ = train(name, base, D, seed, fi, ho)
+        TIMES.setdefault(name, time.time() - t_); done_names.append(name)
         res[name].append(r)
         print(f"{name:12s} seed {seed}: verb {r['verb']:5.1f}  object {r['noun']:5.1f}  action {r['action']:4.1f}"
               f"  top-1 {r['action_top1']:4.1f}  epoch {r['epoch']}", flush=True)
+        print(eta(seed, done_names), flush=True)
+    for A, B in FUSE:
+        fl = [VAL[A][j].float() + VAL[B][j].float() for j in range(3)]
+        r = scores(fl, D["validation"]["y"]); res[f"{A}|{B}"].append(r)
+        print(f"{A + '|' + B:24s} seed {seed}: verb {r['verb']:5.1f}  object {r['noun']:5.1f}  action {r['action']:4.1f}"
+              f"  top-1 {r['action_top1']:4.1f}  (late fusion)", flush=True)
 
 print(f"\n({a.seeds} seeds, mean +- sd; class-mean top-5 recall on validation_challenge, camera C10119)")
-for name in [t for t in TEACH if t in res] + rows:
+for name in [t for t in TEACH if t in res] + rows + [f"{A}|{B}" for A, B in FUSE]:
     rs = res[name]
     ms = lambda k: (lambda t: f"{t.mean():5.1f} +- {t.std():3.1f}")(torch.tensor([r[k] for r in rs]))   # noqa: E731
     print(f"{name:12s} verb {ms('verb')} | object {ms('noun')} | action {ms('action')} | action top-1 {ms('action_top1')}"
