@@ -39,6 +39,7 @@ ap.add_argument("--lam_kd", type=float, default=2.0)
 ap.add_argument("--T", type=float, default=2.0)
 ap.add_argument("--every", type=int, default=5)
 ap.add_argument("--tag", default="")
+ap.add_argument("--la", default="0,0.25,0.5,0.75,1,1.5", help="logit-adjustment strengths; picked on held-out TRAIN")
 ap.add_argument("--fuse", default="", help='late fusion of val predictions: "rowA|rowB,..." (sum of log-probs)')
 ap.add_argument("--text", default="", help="text.pt from 11_text_feats.py: enables +hX (true text) / +hXP (predicted text)")
 ap.add_argument("--recog", default="", help="recog.pt from 06_recog.py: enables history rows (+hT, +hTP, +hP)")
@@ -77,8 +78,10 @@ NOISE = sorted({int(x) for x in re.findall(r"hN(\d+)", a.rows)})   # hN30 = true
 
 def hmode(hm):
     """'hS' / 'hS64' / 'hTP' ... -> (train source, val source) as 'src:length'; length = last N past actions (default 8)."""
-    if re.fullmatch(r"hN\d+", hm):
-        return (f"n{hm[2:]}:8",) * 2
+    mn = re.fullmatch(r"hN(\d+)(P?)(?:_(\d+))?", hm)      # hN40 = 40% noisy true labels; hN40P = same in training,
+    if mn:                                                # PREDICTED labels at test (AAG+-style); _3 = last 3 steps
+        L = int(mn.group(3) or 8)
+        return (f"n{mn.group(1)}:{L}", f"pred:{L}" if mn.group(2) else f"n{mn.group(1)}:{L}")
     m = re.fullmatch(r"(hTP|hT|hP|hS|hV|hXP|hX)(\d*)", hm)
     L = int(m.group(2) or 8)
     return tuple(f"{src}:{L}" for src in HMODE[m.group(1)])
@@ -282,12 +285,29 @@ def train(name, base, D, seed, fi, ho, teacher=None):
     m.load_state_dict(best[1])
     lg = predict(m, D["validation"], groups, hsrc=hte)
     VAL[name] = [F.log_softmax(o, -1).half() for o in lg]                 # kept for late fusion
+    HO[name] = [F.log_softmax(o, -1).half() for o in predict(m, D["train"], groups, ho, hte)]
     r = scores(lg, D["validation"]["y"]); r["epoch"] = best[2]
     return r, m
 
 
 rows = a.rows.split(",")
 FUSE = [f.split("|") for f in a.fuse.split(",") if f]
+TAUS = [float(t) for t in a.la.split(",") if t]
+HO = {}
+_cnt = [torch.bincount(Q["train"]["y"][:, j], minlength=n).float() + 1 for j, n in enumerate(SIZES)]
+LOGP = [(c / c.sum()).log().to(dev) for c in _cnt]                         # log class priors (train)
+
+
+def logit_adjust(val_lp, ho_lp, y_ho, y_val):
+    """post-hoc logit adjustment: score - tau * log prior; tau picked on the held-out TRAIN split (mean recall)."""
+    best = None
+    for t in TAUS:
+        h = scores([ho_lp[j].float() - t * LOGP[j] for j in range(3)], y_ho)
+        sel = (h["verb"] + h["noun"] + h["action"]) / 3
+        if best is None or sel > best[0]:
+            best = (sel, t)
+    r = scores([val_lp[j].float() - best[1] * LOGP[j] for j in range(3)], y_val); r["tau"] = best[1]
+    return r
 res = collections.defaultdict(list)
 VAL, TIMES, t_start = {}, {}, time.time()
 JOBS = rows + [t for t in ("oracle", "oracleH") if any(r_.split("@")[0].split("+")[0].endswith("_kdH" if t == "oracleH" else "_kd") for r_ in rows)]
@@ -331,15 +351,24 @@ for seed in range(a.seeds):
         res[name].append(r)
         print(f"{name:12s} seed {seed}: verb {r['verb']:5.1f}  object {r['noun']:5.1f}  action {r['action']:4.1f}"
               f"  top-1 {r['action_top1']:4.1f}  epoch {r['epoch']}", flush=True)
+        if TAUS:
+            rl = logit_adjust(VAL[name], HO[name], D["train"]["y"][ho], D["validation"]["y"]); res[name + " +LA"].append(rl)
+            print(f"{name + ' +LA':12s} seed {seed}: verb {rl['verb']:5.1f}  object {rl['noun']:5.1f}  action {rl['action']:4.1f}"
+                  f"  top-1 {rl['action_top1']:4.1f}  tau {rl['tau']}", flush=True)
         print(eta(seed, done_names), flush=True)
     for A, B in FUSE:
         fl = [VAL[A][j].float() + VAL[B][j].float() for j in range(3)]
         r = scores(fl, D["validation"]["y"]); res[f"{A}|{B}"].append(r)
         print(f"{A + '|' + B:24s} seed {seed}: verb {r['verb']:5.1f}  object {r['noun']:5.1f}  action {r['action']:4.1f}"
               f"  top-1 {r['action_top1']:4.1f}  (late fusion)", flush=True)
+        if TAUS:
+            fh = [HO[A][j].float() + HO[B][j].float() for j in range(3)]
+            rl = logit_adjust(fl, fh, D["train"]["y"][ho], D["validation"]["y"]); res[f"{A}|{B} +LA"].append(rl)
+            print(f"{A + '|' + B + ' +LA':24s} seed {seed}: verb {rl['verb']:5.1f}  object {rl['noun']:5.1f}  action {rl['action']:4.1f}"
+                  f"  top-1 {rl['action_top1']:4.1f}  tau {rl['tau']}", flush=True)
 
 print(f"\n({a.seeds} seeds, mean +- sd; class-mean top-5 recall on validation_challenge, camera C10119)")
-for name in [t for t in TEACH if t in res] + rows + [f"{A}|{B}" for A, B in FUSE]:
+for name in [t for t in TEACH if t in res] + [x for r_ in rows + [f"{A}|{B}" for A, B in FUSE] for x in (r_, r_ + " +LA") if x in res]:
     rs = res[name]
     ms = lambda k: (lambda t: f"{t.mean():5.1f} +- {t.std():3.1f}")(torch.tensor([r[k] for r in rs]))   # noqa: E731
     print(f"{name:12s} verb {ms('verb')} | object {ms('noun')} | action {ms('action')} | action top-1 {ms('action_top1')}"
