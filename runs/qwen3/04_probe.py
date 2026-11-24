@@ -39,7 +39,8 @@ ap.add_argument("--lam_kd", type=float, default=2.0)
 ap.add_argument("--T", type=float, default=2.0)
 ap.add_argument("--every", type=int, default=5)
 ap.add_argument("--tag", default="")
-ap.add_argument("--la", default="0,0.25,0.5,0.75,1,1.5", help="logit-adjustment strengths; picked on held-out TRAIN")
+ap.add_argument("--texts", default="", help='style=path,... from 12_text_styles.py: rows +hXP-<style> (steps), +hXL-<style> (final state)')
+ap.add_argument("--la", default="0,0.25,0.5,0.75,1,1.5,2,2.5,3", help="logit-adjustment strengths; picked on held-out TRAIN")
 ap.add_argument("--fuse", default="", help='late fusion of val predictions: "rowA|rowB,..." (sum of log-probs)')
 ap.add_argument("--text", default="", help="text.pt from 11_text_feats.py: enables +hX (true text) / +hXP (predicted text)")
 ap.add_argument("--recog", default="", help="recog.pt from 06_recog.py: enables history rows (+hT, +hTP, +hP)")
@@ -78,6 +79,11 @@ NOISE = sorted({int(x) for x in re.findall(r"hN(\d+)", a.rows)})   # hN30 = true
 
 def hmode(hm):
     """'hS' / 'hS64' / 'hTP' ... -> (train source, val source) as 'src:length'; length = last N past actions (default 8)."""
+    mt = re.fullmatch(r"(hXP|hXL)(\d*)-(\w+)", hm)         # text styles (12_text_styles.py)
+    if mt:
+        kind = "P" if mt.group(1) == "hXP" else "L"
+        L = 1 if kind == "L" else int(mt.group(2) or 8)
+        return (f"txt{kind}_{mt.group(3)}:{L}",) * 2
     mn = re.fullmatch(r"hN(\d+)(P?)(?:_(\d+))?", hm)      # hN40 = 40% noisy true labels; hN40P = same in training,
     if mn:                                                # PREDICTED labels at test (AAG+-style); _3 = last 3 steps
         L = int(mn.group(3) or 8)
@@ -99,6 +105,7 @@ def stats(x):
 
 
 cache = {}
+TDIM = [0]                     # (PCA dim + 1) of the text-style tokens, set when --texts is loaded
 
 
 def gpu_data(layer):
@@ -146,6 +153,15 @@ def gpu_data(layer):
                 x = TX[s][k].float(); x = torch.cat([x, torch.ones_like(x[..., :1])], -1)   # 4097-d: marks text tokens
                 out[s]["txt_" + src] = x.half().to(dev)
             out[s]["txt_m"] = TX[s]["mask"].to(dev)
+    for item in [x for x in a.texts.split(",") if x]:
+        st, path = item.split("=")
+        TS = torch.load(path)
+        for s in ("train", "validation"):
+            for k, key in (("pred", "P"), ("last", "L")):
+                x = TS[s][k].float(); x = torch.cat([x, torch.ones_like(x[..., :1])], -1)    # (dim+1)-d marks style text
+                out[s][f"txt{key}_{st}"] = x.half().to(dev)
+            out[s][f"txtm_{st}"] = TS[s]["mask"].to(dev)
+        TDIM[0] = TS["train"]["pred"].shape[-1] + 1
     cache.clear(); cache[layer] = out
     return out
 
@@ -155,6 +171,13 @@ def tokens(D, groups, idx, hsrc="true:8"):
     for g in groups:
         if g == "h":
             src, L = hsrc.split(":"); L = int(L)
+            if src.startswith("txt") and "_" in src:               # text styles
+                x = D[src][idx][:, -L:]
+                m = D["txtm_" + src.split("_", 1)[1]][idx][:, -L:] if src.startswith("txtP") else \
+                    torch.ones(len(idx), 1, dtype=torch.bool, device=dev)
+                n = x.shape[1]; xs.append(x); ms.append(m)
+                kinds.append(torch.full((n,), GROUPS[g], device=dev)); posi.append(torch.arange(n, device=dev))
+                continue
             if src.startswith("txt"):
                 x, m = D["txt_" + src][idx][:, -L:], D["txt_m"][idx][:, -L:]
                 n = x.shape[1]; xs.append(x); ms.append(m)
@@ -183,7 +206,8 @@ class Probe(nn.Module):
         self.inq = nn.Sequential(nn.LayerNorm(4096), nn.Linear(4096, d))
         self.int = nn.Sequential(nn.LayerNorm(2048), nn.Linear(2048, d))
         self.hemb = nn.ModuleList(nn.Embedding(n + 1, d) for n in SIZES)
-        self.intx = nn.Sequential(nn.LayerNorm(4096), nn.Linear(4096, d))                # history as text (VLM language states)          # past action / verb / object labels
+        self.intx = nn.Sequential(nn.LayerNorm(4096), nn.Linear(4096, d))                # history as text (VLM language states)
+        self.intx2 = nn.Sequential(nn.LayerNorm(TDIM[0] - 1), nn.Linear(TDIM[0] - 1, d)) if TDIM[0] else None   # text styles (PCA)          # past action / verb / object labels
         self.kind = nn.Embedding(len(GROUPS), d); self.pos = nn.Embedding(512, d)
         layer = nn.TransformerEncoderLayer(d, 8, 4 * d, a.drop, batch_first=True, norm_first=True, activation="gelu")
         self.blocks = nn.TransformerEncoder(layer, a.blocks)
@@ -197,6 +221,8 @@ class Probe(nn.Module):
     def embed(self, x):
         if x.dtype == torch.long:                                       # hard labels
             return sum(e(x[..., j]) for j, e in enumerate(self.hemb))
+        if TDIM[0] and x.shape[-1] == TDIM[0]:
+            return self.intx2(x[..., :-1].float())
         if x.shape[-1] == 4097:
             return self.intx(x[..., :4096].float())
         if x.shape[-1] == PSUM:                                         # soft labels: expected label embedding
