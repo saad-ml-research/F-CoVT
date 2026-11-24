@@ -182,3 +182,21 @@ Each past step = mean of its words' layer-27 states in "Steps so far, oldest fir
 | late fusion with predicted-text-only model | predicted as text | 60.0 ± 0.3 | 30.4 ± 0.2 | 10.5 ± 0.3 | 13.0 ± 0.4 | 34.5 ± 1.0 |
 
 Text does not beat learned label vectors; history mainly helps the verb and accuracy, not class-mean action recall.
+
+### Logit adjustment (LA) and AAG+-style history training (`--tag aagplus`)
+
+LA = class score minus tau x log(train class frequency), tau picked on the held-out 10% of train (picked 1.5, the
+grid maximum). hN40P / hN60P = true history with 40% / 60% random labels in training, predicted at test (AAG+-style).
+
+| model | setting | verb | object | action | action top-1 | action top-5 acc |
+|---|---|---|---|---|---|---|
+| VLM grid + TSM + teaching | fair | 57.9 ± 1.1 | 34.3 ± 0.2 | 11.3 ± 0.9 | 11.5 ± 0.4 | 30.3 ± 1.0 |
+| + LA | fair | 60.2 ± 1.4 | 40.9 ± 1.1 | 14.5 ± 1.1 | 9.5 ± 1.6 | 24.2 ± 3.7 |
+| + soft history (8) + LA | boundaries given | 63.5 ± 1.6 | 41.5 ± 1.7 | 16.1 ± 0.4 | 9.9 ± 1.3 | 26.0 ± 4.0 |
+| + soft history (3) + LA | boundaries given | 62.4 ± 1.7 | 41.8 ± 0.6 | 15.4 ± 0.2 | 10.0 ± 0.8 | 25.2 ± 2.2 |
+| + noisy-true history (40%) + LA | boundaries given | 62.0 ± 0.5 | 42.6 ± 0.1 | 15.2 ± 0.8 | 10.0 ± 0.3 | 25.3 ± 0.8 |
+| + noisy-true history (60%) + LA | boundaries given | 62.1 ± 0.2 | 41.8 ± 0.4 | 14.9 ± 0.4 | 9.3 ± 0.5 | 23.2 ± 1.4 |
+| fusion: main + soft history only, + LA | boundaries given | 64.3 ± 1.0 | 42.6 ± 0.6 | 16.5 ± 0.1 | 10.2 ± 0.5 | 27.0 ± 0.8 |
+| fusion: main + soft (8) + soft history only, + LA | boundaries given | 65.4 ± 1.2 | 41.9 ± 0.4 | 16.8 ± 0.4 | 10.6 ± 0.3 | 28.1 ± 1.4 |
+
+LA trades accuracy for rare classes; it is a general trick, so TempAgg + LA is the fair comparison.
