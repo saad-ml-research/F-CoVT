@@ -200,3 +200,21 @@ grid maximum). hN40P / hN60P = true history with 40% / 60% random labels in trai
 | fusion: main + soft (8) + soft history only, + LA | boundaries given | 65.4 ± 1.2 | 41.9 ± 0.4 | 16.8 ± 0.4 | 10.6 ± 0.3 | 28.1 ± 1.4 |
 
 LA trades accuracy for rare classes; it is a general trick, so TempAgg + LA is the fair comparison.
+
+### Text styles for predicted history, with LA (`runs/qwen3/12_text_styles.py`, probe `--tag styles`)
+
+| model (+ LA) | verb | object | action | action top-1 | action top-5 acc |
+|---|---|---|---|---|---|
+| VLM grid + TSM + teaching | 61.7 ± 1.5 | 41.8 ± 0.3 | 14.7 ± 1.2 | 9.7 ± 0.4 | 25.0 ± 0.5 |
+| + soft history (label vectors) | 63.7 ± 2.8 | 43.0 ± 0.9 | 16.6 ± 0.8 | 10.5 ± 0.5 | 27.2 ± 1.4 |
+| + text: narrative | 62.0 ± 1.4 | 41.8 ± 0.8 | 16.4 ± 0.5 | 9.7 ± 0.5 | 25.2 ± 1.9 |
+| + text: plain list | 63.4 ± 2.0 | 42.1 ± 0.5 | 16.2 ± 0.6 | 10.0 ± 0.5 | 25.7 ± 1.4 |
+| + text: plain list, last 3 | 62.1 ± 1.7 | 41.9 ± 0.2 | 16.1 ± 0.7 | 9.8 ± 0.4 | 25.8 ± 1.3 |
+| + text: top-3 guesses | 62.9 ± 2.5 | 42.0 ± 0.5 | 15.9 ± 1.4 | 9.8 ± 1.1 | 25.5 ± 2.3 |
+| + text: structured | 59.6 ± 0.3 | 41.4 ± 0.6 | 15.5 ± 0.7 | 9.6 ± 0.2 | 24.1 ± 0.1 |
+| + text: final state, confidence | 62.6 ± 1.7 | 42.1 ± 0.9 | 15.3 ± 1.1 | 9.7 ± 0.4 | 25.2 ± 0.9 |
+| + text: final state, plain list | 62.4 ± 1.6 | 41.7 ± 1.3 | 15.2 ± 0.6 | 9.6 ± 0.8 | 25.1 ± 2.7 |
+| + text: with time | 61.3 ± 1.7 | 42.1 ± 0.8 | 15.0 ± 0.7 | 9.5 ± 0.3 | 24.3 ± 0.7 |
+| + text: with confidence | 61.2 ± 1.7 | 42.3 ± 0.5 | 15.0 ± 0.5 | 10.0 ± 0.6 | 25.3 ± 1.3 |
+
+No text style beats the soft label vectors; plain list / narrative / top-3 are best among the texts.
