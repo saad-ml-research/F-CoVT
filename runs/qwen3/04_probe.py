@@ -40,7 +40,8 @@ ap.add_argument("--T", type=float, default=2.0)
 ap.add_argument("--every", type=int, default=5)
 ap.add_argument("--tag", default="")
 ap.add_argument("--texts", default="", help='style=path,... from 12_text_styles.py: rows +hXP-<style> (steps), +hXL-<style> (final state)')
-ap.add_argument("--la", default="0,0.25,0.5,0.75,1,1.5,2,2.5,3", help="logit-adjustment strengths; picked on held-out TRAIN")
+ap.add_argument("--curve", action="store_true", help="print the full LA curve (recall / top-1 / top-5 acc per tau) on validation")
+ap.add_argument("--la", default="0,0.25,0.5,0.75,1,1.5,2,2.5,3,4,5", help="logit-adjustment strengths; picked on held-out TRAIN")
 ap.add_argument("--fuse", default="", help='late fusion of val predictions: "rowA|rowB,..." (sum of log-probs)')
 ap.add_argument("--text", default="", help="text.pt from 11_text_feats.py: enables +hX (true text) / +hXP (predicted text)")
 ap.add_argument("--recog", default="", help="recog.pt from 06_recog.py: enables history rows (+hT, +hTP, +hP)")
@@ -334,6 +335,14 @@ def logit_adjust(val_lp, ho_lp, y_ho, y_val):
             best = (sel, t)
     r = scores([val_lp[j].float() - best[1] * LOGP[j] for j in range(3)], y_val); r["tau"] = best[1]
     return r
+
+
+CURVES = collections.defaultdict(lambda: collections.defaultdict(list))   # name -> tau -> [scores per seed]
+
+
+def curve(name, val_lp, y_val):
+    for t in TAUS:
+        CURVES[name][t].append(scores([val_lp[j].float() - t * LOGP[j] for j in range(3)], y_val))
 res = collections.defaultdict(list)
 VAL, TIMES, t_start = {}, {}, time.time()
 JOBS = rows + [t for t in ("oracle", "oracleH") if any(r_.split("@")[0].split("+")[0].endswith("_kdH" if t == "oracleH" else "_kd") for r_ in rows)]
@@ -377,6 +386,8 @@ for seed in range(a.seeds):
         res[name].append(r)
         print(f"{name:12s} seed {seed}: verb {r['verb']:5.1f}  object {r['noun']:5.1f}  action {r['action']:4.1f}"
               f"  top-1 {r['action_top1']:4.1f}  epoch {r['epoch']}", flush=True)
+        if a.curve:
+            curve(name, VAL[name], D["validation"]["y"])
         if TAUS:
             rl = logit_adjust(VAL[name], HO[name], D["train"]["y"][ho], D["validation"]["y"]); res[name + " +LA"].append(rl)
             print(f"{name + ' +LA':12s} seed {seed}: verb {rl['verb']:5.1f}  object {rl['noun']:5.1f}  action {rl['action']:4.1f}"
@@ -387,6 +398,8 @@ for seed in range(a.seeds):
         r = scores(fl, D["validation"]["y"]); res[f"{A}|{B}"].append(r)
         print(f"{A + '|' + B:24s} seed {seed}: verb {r['verb']:5.1f}  object {r['noun']:5.1f}  action {r['action']:4.1f}"
               f"  top-1 {r['action_top1']:4.1f}  (late fusion)", flush=True)
+        if a.curve:
+            curve(f"{A}|{B}", fl, D["validation"]["y"])
         if TAUS:
             fh = [HO[A][j].float() + HO[B][j].float() for j in range(3)]
             rl = logit_adjust(fl, fh, D["train"]["y"][ho], D["validation"]["y"]); res[f"{A}|{B} +LA"].append(rl)
@@ -399,4 +412,9 @@ for name in [t for t in TEACH if t in res] + [x for r_ in rows + [f"{A}|{B}" for
     ms = lambda k: (lambda t: f"{t.mean():5.1f} +- {t.std():3.1f}")(torch.tensor([r[k] for r in rs]))   # noqa: E731
     print(f"{name:12s} verb {ms('verb')} | object {ms('noun')} | action {ms('action')} | action top-1 {ms('action_top1')}"
           f" | action top-5 acc {ms('action_top5')}")
-json.dump({"args": vars(a), "results": res}, open(os.path.join(a.q3, f"probe{('_' + a.tag) if a.tag else ''}.json"), "w"), indent=1)
+for name, cv in CURVES.items():
+    print(f"\nLA curve on validation: {name} ({a.seeds} seeds, mean)\n  tau | verb  object  action | action top-1  top-5 acc")
+    for t, rs in cv.items():
+        m = lambda k: sum(r[k] for r in rs) / len(rs)   # noqa: E731
+        print(f"{t:5.2f} | {m('verb'):5.1f}  {m('noun'):5.1f}  {m('action'):5.1f}  | {m('action_top1'):5.1f}  {m('action_top5'):5.1f}")
+json.dump({"args": vars(a), "results": res, "curves": {k: {str(t): v for t, v in cv.items()} for k, cv in CURVES.items()}}, open(os.path.join(a.q3, f"probe{('_' + a.tag) if a.tag else ''}.json"), "w"), indent=1)

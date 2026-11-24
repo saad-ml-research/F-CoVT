@@ -45,7 +45,7 @@ def all_scores(tau):
 print(f"{len(z['ids'])} validation segments")
 print(f"{'tau':>5} | verb  object  action | action top-1  top-5 acc")
 best = None
-for tau in (0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3):
+for tau in (0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6):
     r = all_scores(tau)
     print(f"{tau:5.2f} | {r['verb']:5.1f}  {r['object']:5.1f}  {r['action']:5.1f}  | {r['action_top1']:5.1f}  {r['action_top5']:5.1f}")
     sel = (r["verb"] + r["object"] + r["action"]) / 3
