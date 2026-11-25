@@ -40,6 +40,8 @@ ap.add_argument("--T", type=float, default=2.0)
 ap.add_argument("--every", type=int, default=5)
 ap.add_argument("--tag", default="")
 ap.add_argument("--texts", default="", help='style=path,... from 12_text_styles.py: rows +hXP-<style> (steps), +hXL-<style> (final state)')
+ap.add_argument("--thoughts", default="", help="dir from 13_reason.py thoughts: rows fuse_th_kd (+ 2 reasoning tokens)")
+ap.add_argument("--train_subset", default="", help="json list of train indices: train / held-out only on these")
 ap.add_argument("--curve", action="store_true", help="print the full LA curve (recall / top-1 / top-5 acc per tau) on validation")
 ap.add_argument("--la", default="0,0.25,0.5,0.75,1,1.5,2,2.5,3,4,5", help="logit-adjustment strengths; picked on held-out TRAIN")
 ap.add_argument("--fuse", default="", help='late fusion of val predictions: "rowA|rowB,..." (sum of log-probs)')
@@ -65,11 +67,12 @@ SIZES = [int(max(Q["train"]["y"][:, j].max(), Q["validation"]["y"][:, j].max()))
 print(f"train {len(Q['train']['y'])}  val {len(Q['validation']['y'])} | VLM layers {LAYERS} | classes {SIZES}", flush=True)
 
 # token groups: name -> (source, kind id, n tokens); positions = index inside the group
-GROUPS = {"q_last": 0, "q_hist": 1, "q_rec": 2, "t_hist": 3, "t_rec": 4, "t_fut": 5, "h": 6}
+GROUPS = {"q_last": 0, "q_hist": 1, "q_rec": 2, "t_hist": 3, "t_rec": 4, "t_fut": 5, "h": 6, "th": 7}
 ROWS = {"q_last": ["q_last"], "q_rec": ["q_rec"], "q_hist": ["q_hist", "q_rec"], "tsm_hist": ["t_hist", "t_rec"],
         "tsm_kd": ["t_hist", "t_rec"], "fuse": ["q_hist", "q_rec", "t_hist", "t_rec"],
         "fuse_kd": ["q_hist", "q_rec", "t_hist", "t_rec"], "oracle": ["t_hist", "t_rec", "t_fut"], "hlab": []}
 ROWS["fuse_kdH"], ROWS["tsm_kdH"] = ROWS["fuse_kd"], ROWS["tsm_kd"]     # same students, taught by oracleH
+ROWS["fuse_th_kd"] = ROWS["fuse_kd"] + ["th"]          # + 2 tokens from the VLM's reasoning (13_reason.py thoughts)
 # teachers: oracle = TSM past + real future; oracleH = the same + the TRUE past-action labels (privileged)
 TEACH = {"oracle": ("oracle", ROWS["oracle"]), "oracleH": ("oracle+hT8", ROWS["oracle"] + ["h"])}   # oracleH: last 8 true labels
 # history modes (row suffix): labels of the past actions used in (training, validation)
@@ -154,6 +157,15 @@ def gpu_data(layer):
                 x = TX[s][k].float(); x = torch.cat([x, torch.ones_like(x[..., :1])], -1)   # 4097-d: marks text tokens
                 out[s]["txt_" + src] = x.half().to(dev)
             out[s]["txt_m"] = TX[s]["mask"].to(dev)
+    if a.thoughts:
+        for s in ("train", "validation"):
+            th = torch.zeros(len(Q[s]["y"]), 2, 4098, dtype=torch.float16)
+            for pth in glob.glob(os.path.join(a.thoughts, f"{s}_*.pt")):
+                c = torch.load(pth)
+                x = c["feats"].float(); x = torch.cat([x, torch.ones_like(x[..., :2])], -1)      # 4098-d marks thought tokens
+                th[torch.tensor(c["ids"])] = x.half()
+            out[s]["th"] = th.to(dev)
+            print(f"thought tokens {s}: {int((th[:, 0, -1] > 0).sum())} segments", flush=True)
     for item in [x for x in a.texts.split(",") if x]:
         st, path = item.split("=")
         TS = torch.load(path)
@@ -170,6 +182,11 @@ def gpu_data(layer):
 def tokens(D, groups, idx, hsrc="true:8"):
     xs, ms, kinds, posi = [], [], [], []
     for g in groups:
+        if g == "th":
+            x = D["th"][idx]; n = x.shape[1]
+            xs.append(x); ms.append(torch.ones(len(idx), n, dtype=torch.bool, device=dev))
+            kinds.append(torch.full((n,), GROUPS[g], device=dev)); posi.append(torch.arange(n, device=dev))
+            continue
         if g == "h":
             src, L = hsrc.split(":"); L = int(L)
             if src.startswith("txt") and "_" in src:               # text styles
@@ -208,6 +225,7 @@ class Probe(nn.Module):
         self.int = nn.Sequential(nn.LayerNorm(2048), nn.Linear(2048, d))
         self.hemb = nn.ModuleList(nn.Embedding(n + 1, d) for n in SIZES)
         self.intx = nn.Sequential(nn.LayerNorm(4096), nn.Linear(4096, d))                # history as text (VLM language states)
+        self.inth = nn.Sequential(nn.LayerNorm(4096), nn.Linear(4096, d))                # reasoning (thought) tokens
         self.intx2 = nn.Sequential(nn.LayerNorm(TDIM[0] - 1), nn.Linear(TDIM[0] - 1, d)) if TDIM[0] else None   # text styles (PCA)          # past action / verb / object labels
         self.kind = nn.Embedding(len(GROUPS), d); self.pos = nn.Embedding(512, d)
         layer = nn.TransformerEncoderLayer(d, 8, 4 * d, a.drop, batch_first=True, norm_first=True, activation="gelu")
@@ -222,6 +240,8 @@ class Probe(nn.Module):
     def embed(self, x):
         if x.dtype == torch.long:                                       # hard labels
             return sum(e(x[..., j]) for j, e in enumerate(self.hemb))
+        if x.shape[-1] == 4098:
+            return self.inth(x[..., :4096].float())
         if TDIM[0] and x.shape[-1] == TDIM[0]:
             return self.intx2(x[..., :-1].float())
         if x.shape[-1] == 4097:
@@ -360,6 +380,9 @@ def eta(seed, done_names):
 for seed in range(a.seeds):
     done_names = []
     perm = torch.randperm(len(Q["train"]["y"]), generator=torch.Generator().manual_seed(seed)).to(dev)
+    if a.train_subset:
+        S = torch.tensor(json.load(open(a.train_subset)))
+        perm = S[torch.randperm(len(S), generator=torch.Generator().manual_seed(seed))].to(dev)
     ho, fi = perm[: len(perm) // 10], perm[len(perm) // 10:]
     teachers = {}
     for name in rows:
