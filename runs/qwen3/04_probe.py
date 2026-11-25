@@ -42,6 +42,11 @@ ap.add_argument("--tag", default="")
 ap.add_argument("--texts", default="", help='style=path,... from 12_text_styles.py: rows +hXP-<style> (steps), +hXL-<style> (final state)')
 ap.add_argument("--thoughts", default="", help="dir from 13_reason.py thoughts: rows fuse_th_kd (+ 2 reasoning tokens)")
 ap.add_argument("--train_subset", default="", help="json list of train indices: train / held-out only on these")
+ap.add_argument("--rl_epochs", type=int, default=3, help="GRPO fine-tuning epochs for rows with #<reward>")
+ap.add_argument("--rl_lr", type=float, default=1e-5)
+ap.add_argument("--rl_G", type=int, default=8, help="sampled top-5 lists per segment (group size)")
+ap.add_argument("--rl_beta", type=float, default=0.05, help="KL weight to the supervised starting point")
+ap.add_argument("--rl_alpha", type=float, default=0.5, help="class weight = count^-alpha (normalized), for bal rewards")
 ap.add_argument("--curve", action="store_true", help="print the full LA curve (recall / top-1 / top-5 acc per tau) on validation")
 ap.add_argument("--la", default="0,0.25,0.5,0.75,1,1.5,2,2.5,3,4,5", help="logit-adjustment strengths; picked on held-out TRAIN")
 ap.add_argument("--fuse", default="", help='late fusion of val predictions: "rowA|rowB,..." (sum of log-probs)')
@@ -300,7 +305,70 @@ def predict(m, D, groups, idx=None, hsrc="true:8"):
     return [torch.cat(o) for o in outs]
 
 
-def train(name, base, D, seed, fi, ho, teacher=None):
+def plackett_luce(logits, idx):
+    """log-prob of ordered picks idx [B, G, k] (without replacement) under softmax(logits [B, C])."""
+    B, G, k = idx.shape
+    l = logits[:, None, :].expand(B, G, -1)
+    taken = torch.zeros_like(l, dtype=torch.bool)
+    lp = 0
+    for j in range(k):
+        c = idx[..., j]
+        lp = lp + l.gather(-1, c[..., None]).squeeze(-1) - l.masked_fill(taken, float("-inf")).logsumexp(-1)
+        taken = taken.scatter(-1, c[..., None], True)
+    return lp
+
+
+def grpo(m, D, groups, htr, fi, ho, teacher, variant, seed):
+    """GRPO on the probe's ACTION head: sample G top-5 lists per segment (Gumbel top-k), reward each, advantage =
+    reward standardized within its group; loss = -A * log PL(list) + beta * KL(policy || start), plus the usual focal
+    loss on verb / object so those heads do not drift. Epoch kept by held-out mean recall (epoch 0 = start)."""
+    torch.manual_seed(1000 + seed)
+    ref = copy.deepcopy(m).eval()
+    for p in ref.parameters():
+        p.requires_grad_(False)
+    opt = torch.optim.AdamW(m.parameters(), lr=a.rl_lr, weight_decay=0.0)
+    ytr = D["train"]["y"]
+    w = (CNT_A.clamp(min=1) ** -a.rl_alpha); w = w / w[ytr[fi, 0]].mean()          # mean weight 1 over training segments
+    h0 = scores(predict(m, D["train"], groups, ho, htr), ytr[ho]); best = ((h0["verb"] + h0["noun"] + h0["action"]) / 3, copy.deepcopy(m.state_dict()), 0)
+    for ep in range(a.rl_epochs):
+        m.train(); stats = []
+        for b in fi[torch.randperm(len(fi), device=dev)].split(a.bs):
+            lg = m(*tokens(D["train"], groups, b, htr))
+            la = lg[0].float()
+            gum = -torch.log(-torch.log(torch.rand(len(b), a.rl_G, la.shape[-1], device=dev).clamp(1e-9, 1 - 1e-9)))
+            idx = (la.detach()[:, None, :] + gum).topk(5, -1).indices                     # [B, G, 5]
+            y = ytr[b]
+            hit = (idx == y[:, None, None, 0]).any(-1).float()
+            r = hit.clone()
+            if variant in ("bal", "sbal", "tbal"):
+                r = r * w[y[:, 0]][:, None]
+            if variant == "sbal":
+                vh = (A2V[idx] == y[:, None, None, 1]).any(-1).float(); oh = (A2O[idx] == y[:, None, None, 2]).any(-1).float()
+                r = r + w[y[:, 0]][:, None] * 0.25 * (vh + oh) * (1 - hit)
+            if variant == "tbal":
+                with torch.no_grad():
+                    tp = teacher[0](*tokens(D["train"], teacher[1], b, teacher[2]))[0].float().softmax(-1)
+                r = r + tp[:, None, :].expand(-1, a.rl_G, -1).gather(-1, idx).sum(-1)
+            adv = (r - r.mean(1, keepdim=True)) / (r.std(1, keepdim=True) + 1e-6)
+            lp = plackett_luce(la, idx)
+            with torch.no_grad():
+                lr_ = ref(*tokens(D["train"], groups, b, htr))[0].float().log_softmax(-1)
+            ls = la.log_softmax(-1)
+            kl = (ls.exp() * (ls - lr_)).sum(-1).mean()
+            loss = -(adv * lp).mean() + a.rl_beta * kl + focal(lg[1], y[:, 1]) + focal(lg[2], y[:, 2])
+            opt.zero_grad(); loss.backward(); torch.nn.utils.clip_grad_norm_(m.parameters(), 1.0); opt.step()
+            stats.append((r.mean().item(), hit.mean().item(), kl.item()))
+        h = scores(predict(m, D["train"], groups, ho, htr), ytr[ho]); sel = (h["verb"] + h["noun"] + h["action"]) / 3
+        rm, hm_, km = (sum(x[i] for x in stats) / len(stats) for i in range(3))
+        print(f"    [GRPO {variant} seed {seed}] epoch {ep + 1}  reward {rm:.3f}  hit {hm_:.3f}  KL {km:.4f}  held-out mean recall {sel:5.1f}"
+              f"{' *' if sel > best[0] else ''}", flush=True)
+        if sel > best[0]:
+            best = (sel, copy.deepcopy(m.state_dict()), ep + 1)
+    m.load_state_dict(best[1])
+    return best[2]
+
+
+def train(name, base, D, seed, fi, ho, teacher=None, rlv=""):
     torch.manual_seed(seed)
     base, _, hm = base.partition("+")
     groups = ROWS[base] + (["h"] if hm else [])
@@ -330,6 +398,7 @@ def train(name, base, D, seed, fi, ho, teacher=None):
             print(f"  [{name} seed {seed}] epoch {ep + 1:3d}  held-out mean recall {sel:5.1f}{' *' if best[2] == ep + 1 else '  '}"
                   f"  val verb {v['verb']:5.1f}  object {v['noun']:5.1f}  action {v['action']:4.1f}", flush=True)
     m.load_state_dict(best[1])
+    rl_ep = grpo(m, D, groups, htr, fi, ho, teacher, rlv, seed) if rlv else None
     lg = predict(m, D["validation"], groups, hsrc=hte)
     VAL[name] = [F.log_softmax(o, -1).half() for o in lg]                 # kept for late fusion
     HO[name] = [F.log_softmax(o, -1).half() for o in predict(m, D["train"], groups, ho, hte)]
@@ -343,6 +412,11 @@ TAUS = [float(t) for t in a.la.split(",") if t]
 HO = {}
 _cnt = [torch.bincount(Q["train"]["y"][:, j], minlength=n).float() + 1 for j, n in enumerate(SIZES)]
 LOGP = [(c / c.sum()).log().to(dev) for c in _cnt]                         # log class priors (train)
+CNT_A = torch.bincount(Q["train"]["y"][:, 0], minlength=SIZES[0]).float().to(dev)      # action counts (GRPO class weights)
+_yall = torch.cat([Q["train"]["y"], Q["validation"]["y"]])
+A2V = torch.zeros(SIZES[0], dtype=torch.long); A2O = torch.zeros(SIZES[0], dtype=torch.long)
+A2V[_yall[:, 0]], A2O[_yall[:, 0]] = _yall[:, 1], _yall[:, 2]
+A2V, A2O = A2V.to(dev), A2O.to(dev)                                            # action -> verb / object (structured reward)
 
 
 def logit_adjust(val_lp, ho_lp, y_ho, y_val):
@@ -387,6 +461,7 @@ for seed in range(a.seeds):
     teachers = {}
     for name in rows:
         base, layer = (name.split("@") + ["27"])[:2]
+        base, _, rlv = base.partition("#")                  # fuse_kd#bal = fuse_kd + GRPO with the 'bal' reward
         D = gpu_data(int(layer))
         b0 = base.split("+")[0]
         if b0.endswith("_kd") or b0.endswith("_kdH"):
@@ -401,10 +476,10 @@ for seed in range(a.seeds):
                     p.requires_grad_(False)
                 teachers[tk] = (tm, TEACH[tk][1], "true:8")
             t_ = time.time()
-            r, _ = train(name, base, D, seed, fi, ho, teacher=teachers[tk])
+            r, _ = train(name, base, D, seed, fi, ho, teacher=teachers[tk], rlv=rlv)
         else:
             t_ = time.time()
-            r, _ = train(name, base, D, seed, fi, ho)
+            r, _ = train(name, base, D, seed, fi, ho, rlv=rlv)
         TIMES.setdefault(name, time.time() - t_); done_names.append(name)
         res[name].append(r)
         print(f"{name:12s} seed {seed}: verb {r['verb']:5.1f}  object {r['noun']:5.1f}  action {r['action']:4.1f}"
