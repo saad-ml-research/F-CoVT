@@ -218,3 +218,19 @@ LA trades accuracy for rare classes; it is a general trick, so TempAgg + LA is t
 | + text: with confidence | 61.2 ± 1.7 | 42.3 ± 0.5 | 15.0 ± 0.5 | 10.0 ± 0.6 | 25.3 ± 1.3 |
 
 No text style beats the soft label vectors; plain list / narrative / top-3 are best among the texts.
+
+### Language reasoning (`runs/qwen3/13_reason.py`, `14_sft.py`, probe `--tag thoughts`)
+
+Same 1,000 validation segments for all generative rows (one run each):
+
+| model | action recall | verb | object | action top-1 | action top-5 acc |
+|---|---|---|---|---|---|
+| zero-shot, frames only | 1.4 | 33.0 | 6.9 | 3.3 | 17.8 |
+| zero-shot + predicted history text | 5.6 | 34.9 | 13.8 | 4.2 | 18.8 |
+| zero-shot + history + reason first | 4.5 | 33.0 | 13.8 | 3.6 | 17.7 |
+| zero-shot, reason without history | 1.7 | 32.5 | 7.3 | 2.4 | 15.0 |
+| LoRA on hindsight rationales + answer (12k, 1 epoch) | 9.2 | 42.4 | 18.6 | 4.4 | 25.0 |
+| LoRA on the answer only (control) | 10.0 | 47.4 | 15.6 | 9.1 | 28.0 |
+
+Probe with 2 reasoning tokens (12k train subset, 3 seeds): 8.2 -> 8.7 without LA, 11.0 -> 11.0 with LA
+(with soft history: 8.8 -> 9.0, 11.5 -> 11.6). Reasoning does not help beyond fine-tuning on the answers.
