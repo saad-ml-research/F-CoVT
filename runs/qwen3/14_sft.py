@@ -26,6 +26,7 @@ ap.add_argument("--accum", type=int, default=4)
 ap.add_argument("--max_train", type=int, default=0)
 ap.add_argument("--n_eval", type=int, default=1000)
 ap.add_argument("--K", type=int, default=8)
+ap.add_argument("--no_rationale", action="store_true", help="control: target = the answer list only, prompt asks only for the list")
 a = ap.parse_args()
 os.makedirs(a.out, exist_ok=True)
 log = open(os.path.join(a.out, "log.txt"), "a")
@@ -122,8 +123,10 @@ def user_msg(split, i):
     content.append({"type": "text", "text":
         "You are watching a person assemble or disassemble a toy vehicle from a fixed camera above the table. "
         f"Earlier steps, oldest first (recognized automatically, may contain mistakes): {history_text(split, i)}.\n"
-        "First, in one or two short sentences, say where the person is in the assembly and what the next step is likely "
-        "to be. Then write 'Answer:' on its own line, followed by the list.\n" + FMT})
+        + ("Predict what the person will do next, starting about one second after the last frame. Write 'Answer:' on its own "
+           "line, followed by the list.\n" if a.no_rationale else
+           "First, in one or two short sentences, say where the person is in the assembly and what the next step is likely "
+           "to be. Then write 'Answer:' on its own line, followed by the list.\n") + FMT})
     return {"role": "user", "content": content}
 
 
@@ -133,7 +136,7 @@ def target(i, rationale):
     alts = [c for c, _ in nxt[int(R["train"]["y"][H, 0])].most_common()] if H >= 0 else []
     alts = [c for c in alts + prior[0] if c != y and c in vn_of]
     lines = [y] + list(dict.fromkeys(alts))[:4]
-    return rationale.strip() + "\nAnswer:\n" + "\n".join(f"{verb_name[vn_of[c][0]]} | {noun_name[vn_of[c][1]]}" for c in lines)
+    return ("" if a.no_rationale else rationale.strip() + "\n") + "Answer:\n" + "\n".join(f"{verb_name[vn_of[c][0]]} | {noun_name[vn_of[c][1]]}" for c in lines)
 
 
 data = [json.loads(l) for l in open(os.path.join(a.reason_dir, "hindsight_train.jsonl"))]
@@ -200,6 +203,7 @@ json.dump([{"i": i, "text": t} for i, t in zip(ids, texts)], open(os.path.join(a
 m = metrics([parse(t.split("Answer:")[-1]) for t in texts], [IDX["validation"][i]["y"] for i in ids])
 json.dump(m, open(os.path.join(a.out, "eval.json"), "w"), indent=1)
 say(f"student after hindsight SFT ({len(ids)} val segments): recall verb {m['verb']:.1f} object {m['noun']:.1f} action {m['action']:.1f}"
-    f" | action top-1 {m['action_top1']:.1f} top-5 acc {m['action_top5']:.1f}   (zero-shot: reason 4.5, hist 5.6)")
+    f" | action top-1 {m['action_top1']:.1f} top-5 acc {m['action_top5']:.1f}   (zero-shot: reason 4.5, hist 5.6)"
+    f"{'   [CONTROL: no rationale]' if a.no_rationale else ''}")
 say(f"example: {texts[3][:400]!r}")
 say(f"done in {(time.time() - t0) / 60:.0f} min")
