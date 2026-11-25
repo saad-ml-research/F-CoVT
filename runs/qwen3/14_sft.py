@@ -36,7 +36,7 @@ def say(*x):
 
 
 # ------------------------------------------------------------------ names, priors, parsing (as 13_reason.py)
-verb_name, noun_name, act_vn, VN = {}, {}, {}, {}
+verb_name, noun_name, act_vn, VN, VO = {}, {}, {}, {}, {}
 freq = [collections.Counter() for _ in range(3)]
 for fn, ids, is_train in (("train.csv", ("action_id", "verb_id", "noun_id"), True), ("validation_challenge.csv", ("action", "verb", "noun"), False)):
     with open(os.path.join(a.csvs, fn)) as f:
@@ -44,11 +44,12 @@ for fn, ids, is_train in (("train.csv", ("action_id", "verb_id", "noun_id"), Tru
             ai, vi, ni = (int(r[k]) for k in ids)
             v, o = r["verb_cls"].strip(), r["noun_cls"].strip()
             verb_name[vi] = v; noun_name[ni] = o; act_vn[(vi, ni)] = ai; VN[ai] = f"{v} {o}".replace("_", " ")
+            VO[ai] = (vi, ni)
             if is_train and r["video"].endswith("/C10119_rgb.mp4"):
                 for j, c in enumerate((ai, vi, ni)):
                     freq[j][c] += 1
 verb_of = {v: k for k, v in verb_name.items()}; noun_of = {v: k for k, v in noun_name.items()}
-vn_of = {ai: (vi, ni) for (vi, ni), ai in act_vn.items()}
+vn_of = VO                     # action id -> (verb id, object id), from the annotation rows (several ids can share a pair)
 prior = [[c for c, _ in f.most_common()] for f in freq]
 VERBS = sorted(verb_name.values(), key=lambda v: -freq[1][verb_of[v]])
 NOUNS = sorted(noun_name.values(), key=lambda n: -freq[2][noun_of[n]])
