@@ -40,6 +40,7 @@ ap.add_argument("--T", type=float, default=2.0)
 ap.add_argument("--every", type=int, default=5)
 ap.add_argument("--tag", default="")
 ap.add_argument("--texts", default="", help='style=path,... from 12_text_styles.py: rows +hXP-<style> (steps), +hXL-<style> (final state)')
+ap.add_argument("--hands", default="", help="hand_bank.pt from 15_hand_bank.py: rows *_kdP (student + hands), *_kdF (teacher + hands), *_kdPF (both)")
 ap.add_argument("--thoughts", default="", help="dir from 13_reason.py thoughts: rows fuse_th_kd (+ 2 reasoning tokens)")
 ap.add_argument("--train_subset", default="", help="json list of train indices: train / held-out only on these")
 ap.add_argument("--rl_epochs", type=int, default=3, help="GRPO fine-tuning epochs for rows with #<reward>")
@@ -73,14 +74,19 @@ SIZES = [int(max(Q["train"]["y"][:, j].max(), Q["validation"]["y"][:, j].max()))
 print(f"train {len(Q['train']['y'])}  val {len(Q['validation']['y'])} | VLM layers {LAYERS} | classes {SIZES}", flush=True)
 
 # token groups: name -> (source, kind id, n tokens); positions = index inside the group
-GROUPS = {"q_last": 0, "q_hist": 1, "q_rec": 2, "t_hist": 3, "t_rec": 4, "t_fut": 5, "h": 6, "th": 7}
+GROUPS = {"q_last": 0, "q_hist": 1, "q_rec": 2, "t_hist": 3, "t_rec": 4, "t_fut": 5, "h": 6, "th": 7, "p_past": 8, "p_fut": 9}
 ROWS = {"q_last": ["q_last"], "q_rec": ["q_rec"], "q_hist": ["q_hist", "q_rec"], "tsm_hist": ["t_hist", "t_rec"],
         "tsm_kd": ["t_hist", "t_rec"], "fuse": ["q_hist", "q_rec", "t_hist", "t_rec"],
         "fuse_kd": ["q_hist", "q_rec", "t_hist", "t_rec"], "oracle": ["t_hist", "t_rec", "t_fut"], "hlab": []}
 ROWS["fuse_kdH"], ROWS["tsm_kdH"] = ROWS["fuse_kd"], ROWS["tsm_kd"]     # same students, taught by oracleH
-ROWS["fuse_th_kd"] = ROWS["fuse_kd"] + ["th"]          # + 2 tokens from the VLM's reasoning (13_reason.py thoughts)
+ROWS["fuse_th_kd"] = ROWS["fuse_kd"] + ["th"]
+# hand pose: P = student gets the last 4 s of hand motion; F = teacher (oracleP) also sees hands past + next 2 s
+ROWS["fuse_kdP"], ROWS["fuse_kdF"], ROWS["fuse_kdPF"] = ROWS["fuse_kd"] + ["p_past"], ROWS["fuse_kd"], ROWS["fuse_kd"] + ["p_past"]
+ROWS["tsm_kdP"], ROWS["tsm_kdF"], ROWS["tsm_kdPF"] = ROWS["tsm_kd"] + ["p_past"], ROWS["tsm_kd"], ROWS["tsm_kd"] + ["p_past"]          # + 2 tokens from the VLM's reasoning (13_reason.py thoughts)
 # teachers: oracle = TSM past + real future; oracleH = the same + the TRUE past-action labels (privileged)
-TEACH = {"oracle": ("oracle", ROWS["oracle"]), "oracleH": ("oracle+hT8", ROWS["oracle"] + ["h"])}   # oracleH: last 8 true labels
+ROWS["oracleP"] = ROWS["oracle"] + ["p_past", "p_fut"]
+TEACH = {"oracle": ("oracle", ROWS["oracle"]), "oracleH": ("oracle+hT8", ROWS["oracle"] + ["h"]),
+         "oracleP": ("oracleP", ROWS["oracleP"])}   # oracleH: last 8 true labels
 # history modes (row suffix): labels of the past actions used in (training, validation)
 HMODE = {"hT": ("true", "true"), "hTP": ("true", "pred"), "hP": ("pred", "pred"), "hS": ("soft", "soft"),
          "hV": ("seg", "seg"), "hX": ("txtT", "txtT"), "hXP": ("txtP", "txtP")}   # hX / hXP: history as text (11_text_feats.py)       # hV = aligned video history: TSM features of each past action segment
@@ -163,6 +169,11 @@ def gpu_data(layer):
                 x = TX[s][k].float(); x = torch.cat([x, torch.ones_like(x[..., :1])], -1)   # 4097-d: marks text tokens
                 out[s]["txt_" + src] = x.half().to(dev)
             out[s]["txt_m"] = TX[s]["mask"].to(dev)
+    if a.hands:
+        HB = torch.load(a.hands)
+        for s in ("train", "validation"):
+            assert len(HB[s]["past"]) == len(Q[s]["y"]), f"{s}: hand bank and VLM bank differ"
+            out[s]["p_past"], out[s]["p_fut"] = HB[s]["past"].to(dev), HB[s]["fut"].to(dev)
     if a.thoughts:
         for s in ("train", "validation"):
             th = torch.zeros(len(Q[s]["y"]), 2, 4098, dtype=torch.float16)
@@ -232,6 +243,7 @@ class Probe(nn.Module):
         self.hemb = nn.ModuleList(nn.Embedding(n + 1, d) for n in SIZES)
         self.intx = nn.Sequential(nn.LayerNorm(4096), nn.Linear(4096, d))                # history as text (VLM language states)
         self.inth = nn.Sequential(nn.LayerNorm(4096), nn.Linear(4096, d))                # reasoning (thought) tokens
+        self.inhand = nn.Sequential(nn.LayerNorm(134), nn.Linear(134, d))                # hand-pose tokens
         self.intx2 = nn.Sequential(nn.LayerNorm(TDIM[0] - 1), nn.Linear(TDIM[0] - 1, d)) if TDIM[0] else None   # text styles (PCA)          # past action / verb / object labels
         self.kind = nn.Embedding(len(GROUPS), d); self.pos = nn.Embedding(512, d)
         layer = nn.TransformerEncoderLayer(d, 8, 4 * d, a.drop, batch_first=True, norm_first=True, activation="gelu")
@@ -246,6 +258,8 @@ class Probe(nn.Module):
     def embed(self, x):
         if x.dtype == torch.long:                                       # hard labels
             return sum(e(x[..., j]) for j, e in enumerate(self.hemb))
+        if x.shape[-1] == 134:
+            return self.inhand(x.float())
         if x.shape[-1] == 4098:
             return self.inth(x[..., :4096].float())
         if TDIM[0] and x.shape[-1] == TDIM[0]:
@@ -440,7 +454,14 @@ def curve(name, val_lp, y_val):
         CURVES[name][t].append(scores([val_lp[j].float() - t * LOGP[j] for j in range(3)], y_val))
 res = collections.defaultdict(list)
 VAL, TIMES, t_start = {}, {}, time.time()
-JOBS = rows + [t for t in ("oracle", "oracleH") if any(r_.split("@")[0].split("+")[0].endswith("_kdH" if t == "oracleH" else "_kd") for r_ in rows)]
+def _teacher_of(r_):
+    b = r_.split("@")[0].split("#")[0].split("+")[0]
+    if not b.endswith(("_kd", "_kdH", "_kdP", "_kdF", "_kdPF")):
+        return None
+    return "oracleH" if b.endswith("_kdH") else "oracleP" if b.endswith(("_kdF", "_kdPF")) else "oracle"
+
+
+JOBS = rows + sorted({_teacher_of(r_) for r_ in rows} - {None})
 
 
 def eta(seed, done_names):
@@ -465,8 +486,8 @@ for seed in range(a.seeds):
         base, _, rlv = base.partition("#")                  # fuse_kd#bal = fuse_kd + GRPO with the 'bal' reward
         D = gpu_data(int(layer))
         b0 = base.split("+")[0]
-        if b0.endswith("_kd") or b0.endswith("_kdH"):
-            tk = "oracleH" if b0.endswith("_kdH") else "oracle"
+        if b0.endswith(("_kd", "_kdH", "_kdP", "_kdF", "_kdPF")):
+            tk = "oracleH" if b0.endswith("_kdH") else "oracleP" if b0.endswith(("_kdF", "_kdPF")) else "oracle"
             if tk not in teachers:
                 t_ = time.time()
                 r0, tm = train(tk, TEACH[tk][0], D, seed, fi, ho)
