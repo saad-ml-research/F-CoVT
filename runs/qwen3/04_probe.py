@@ -86,6 +86,7 @@ ROWS["fuse_noqh_kd"] = ["q_rec", "t_hist", "t_rec"]
 ROWS["fuse_t30_kd"] = ["q_hist", "q_rec", "t_hist:15", "t_rec"]
 ROWS["fuse_t10_kd"] = ["q_hist", "q_rec", "t_hist:5", "t_rec"]
 ROWS["fuse_t10_noqh_kd"] = ["q_rec", "t_hist:5", "t_rec"]
+ROWS["fuse_t30_noqh_kd"] = ["q_rec", "t_hist:15", "t_rec"]
 # hand pose: P = student gets the last 4 s of hand motion; F = teacher (oracleP) also sees hands past + next 2 s
 ROWS["fuse_kdP"], ROWS["fuse_kdF"], ROWS["fuse_kdPF"] = ROWS["fuse_kd"] + ["p_past"], ROWS["fuse_kd"], ROWS["fuse_kd"] + ["p_past"]
 ROWS["fuse_kdPA"] = ROWS["fuse_kdP"]          # A = + auxiliary output: forecast the next 2 s of hand motion (real target)
