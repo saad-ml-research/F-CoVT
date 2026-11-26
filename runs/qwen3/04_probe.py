@@ -47,6 +47,7 @@ ap.add_argument("--rl_lr", type=float, default=1e-5)
 ap.add_argument("--rl_G", type=int, default=8, help="sampled top-5 lists per segment (group size)")
 ap.add_argument("--rl_beta", type=float, default=0.05, help="KL weight to the supervised starting point")
 ap.add_argument("--rl_alpha", type=float, default=0.5, help="class weight = count^-alpha (normalized), for bal rewards")
+ap.add_argument("--save_val", default="", help="dir: save each row's validation log-probs per seed (for fusion with TempAgg)")
 ap.add_argument("--curve", action="store_true", help="print the full LA curve (recall / top-1 / top-5 acc per tau) on validation")
 ap.add_argument("--la", default="0,0.25,0.5,0.75,1,1.5,2,2.5,3,4,5", help="logit-adjustment strengths; picked on held-out TRAIN")
 ap.add_argument("--fuse", default="", help='late fusion of val predictions: "rowA|rowB,..." (sum of log-probs)')
@@ -481,6 +482,9 @@ for seed in range(a.seeds):
             t_ = time.time()
             r, _ = train(name, base, D, seed, fi, ho, rlv=rlv)
         TIMES.setdefault(name, time.time() - t_); done_names.append(name)
+        if a.save_val:
+            os.makedirs(a.save_val, exist_ok=True)
+            torch.save([x.cpu() for x in VAL[name]], os.path.join(a.save_val, f"{name.replace('|', '_')}_seed{seed}.pt"))
         res[name].append(r)
         print(f"{name:12s} seed {seed}: verb {r['verb']:5.1f}  object {r['noun']:5.1f}  action {r['action']:4.1f}"
               f"  top-1 {r['action_top1']:4.1f}  epoch {r['epoch']}", flush=True)
