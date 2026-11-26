@@ -498,6 +498,8 @@ for seed in range(a.seeds):
     for A, B in FUSE:
         fl = [VAL[A][j].float() + VAL[B][j].float() for j in range(3)]
         r = scores(fl, D["validation"]["y"]); res[f"{A}|{B}"].append(r)
+        if a.save_val:
+            torch.save([x.half().cpu() for x in fl], os.path.join(a.save_val, f"{A}_{B}_seed{seed}.pt"))
         print(f"{A + '|' + B:24s} seed {seed}: verb {r['verb']:5.1f}  object {r['noun']:5.1f}  action {r['action']:4.1f}"
               f"  top-1 {r['action_top1']:4.1f}  (late fusion)", flush=True)
         if a.curve:

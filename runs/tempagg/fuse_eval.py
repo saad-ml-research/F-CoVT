@@ -60,6 +60,7 @@ print(f"{len(sel)} validation segments matched")
 print(fmt("TempAgg (official)", score(TA)))
 for row in a.rows.split(","):
     seeds = [s_ for s_ in range(a.seeds) if os.path.exists(os.path.join(a.val_dir, f"{row.replace('|', '_')}_seed{s_}.pt"))]
+    assert seeds, f"no saved predictions for {row}"
     single = [score(ours(row, [s_])) for s_ in seeds]
     m = {k: np.mean([r[k] for r in single]) for k in single[0]}
     print(fmt(f"{row} (single seed, mean of {len(seeds)})", m))
@@ -68,6 +69,16 @@ for row in a.rows.split(","):
     for w in (0.5, 1.0, 2.0):
         F_ = {k: lsm(TA[k] + w * E[k]) for k in TA}
         print(fmt(f"TempAgg + {w:g} x {row} ensemble", score(F_)))
+    # matched-accuracy comparison: our LA curve vs TempAgg's, recall interpolated at the same top-5 accuracy
+    taus = [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 3.5, 4, 5, 6]
+    ta_c = sorted((score(TA, t)["action_top5"], score(TA, t)["action"]) for t in taus)
+    xs, ys = np.array([c[0] for c in ta_c]), np.array([c[1] for c in ta_c])
+    print(f"  matched top-5 accuracy, {row} ({len(seeds)}-seed ensemble) + LA vs TempAgg + LA:")
+    for t in taus[:11]:
+        r = score(E, t)
+        if xs.min() <= r["action_top5"] <= xs.max():
+            ta = float(np.interp(r["action_top5"], xs, ys))
+            print(f"    tau {t:4.2f} | top-5 acc {r['action_top5']:5.1f} | ours {r['action']:5.1f}  TempAgg {ta:5.1f}  gap {r['action'] - ta:+.1f}")
     F_ = {k: lsm(TA[k] + E[k]) for k in TA}
     print(f"  LA curve, TempAgg + {row} ensemble (equal weight):")
     for tau in (0, 0.5, 1, 1.5, 2, 2.5, 3):
