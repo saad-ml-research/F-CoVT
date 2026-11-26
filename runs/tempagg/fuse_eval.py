@@ -11,6 +11,7 @@ import torch
 ap = argparse.ArgumentParser()
 ap.add_argument("npz"); ap.add_argument("val_dir"); ap.add_argument("val_index"); ap.add_argument("csvs")
 ap.add_argument("--rows", default="fuse_kd"); ap.add_argument("--seeds", type=int, default=5)
+ap.add_argument("--anno", default="/workspace/data/a101_anticip", help="searched for tail_validation_segments.txt / validation_split_seq.txt")
 a = ap.parse_args()
 z = np.load(a.npz)
 order = {int(q["id"]): i for i, q in enumerate(json.load(open(a.val_index)))}           # our validation row order
@@ -44,6 +45,57 @@ def score(S, tau=0.0):
 
 TA = {k: lsm(z[k].astype(np.float64)) for k in ("verb", "object", "action")}
 
+# ------------------------------------------------------------------ official splits: head / tail segments, seen / unseen toys
+def find(name):
+    for root, _, files in os.walk(a.anno):
+        if name in files:
+            return os.path.join(root, name)
+
+
+ids = z["ids"].astype(int)
+SPLITS = {"overall": np.ones(len(ids), bool)}
+tf = find("tail_validation_segments.txt")
+if tf:
+    tail = {int(x.strip()) for x in open(tf) if x.strip()}
+    SPLITS["head"], SPLITS["tail"] = ~np.isin(ids, list(tail)), np.isin(ids, list(tail))
+else:
+    print("tail_validation_segments.txt not found: no head / tail split")
+vid_of, shared_of = {}, {}
+with open(os.path.join(a.csvs, "validation_challenge.csv")) as f:
+    for r in csv.DictReader(f):
+        vid_of[int(r["id"])] = r["video"].split("/")[0]
+        if "shared" in r:
+            shared_of[int(r["id"])] = r["shared"].strip()
+sf = find("validation_split_seq.txt")
+if sf:
+    unseen = {l.split("\t")[0].strip() for l in open(sf) if len(l.split("\t")) > 1 and l.split("\t")[1].strip() == "notshared"}
+    un = np.array([vid_of[i] in unseen for i in ids])
+elif shared_of:
+    un = np.array([shared_of[i] == "notshared" for i in ids])
+else:
+    un = None; print("no seen / unseen information found")
+if un is not None:
+    SPLITS["seen"], SPLITS["unseen"] = ~un, un
+print("splits:", {k: int(v.sum()) for k, v in SPLITS.items()}, "| tail file:", tf, "| seen/unseen:", sf or "csv 'shared' column")
+
+
+def cm(sc, y, mask):
+    top = np.argsort(-sc[mask], 1)[:, :5]; yy = y[mask]
+    per = collections.defaultdict(list)
+    for c, h in zip(yy, (top == yy[:, None]).any(1)):
+        per[c].append(h)
+    return 100 * np.mean([np.mean(v) for v in per.values()])
+
+
+def breakdown(name, S, tau=0.0):
+    adj = {}
+    for k in ("verb", "object", "action"):
+        n = S[k].shape[1]
+        c = np.array([cnt[k][i] + 1 for i in range(n)], float)
+        adj[k] = S[k] - tau * np.log(c / c.sum())
+    cells = [f"{sp}: " + " / ".join(f"{cm(adj[k], Y[k], m):4.1f}" for k in ("verb", "object", "action")) for sp, m in SPLITS.items()]
+    print(f"  {name:40s} " + " | ".join(cells))
+
 
 def ours(row, seeds):
     acc = None
@@ -58,6 +110,7 @@ fmt = lambda name, r: (f"{name:44s} verb {r['verb']:5.1f} object {r['object']:5.
                        f"top-1 {r['action_top1']:5.1f} top-5 acc {r['action_top5']:5.1f}")
 print(f"{len(sel)} validation segments matched")
 print(fmt("TempAgg (official)", score(TA)))
+BREAK = [("TempAgg (official)", TA)]
 for row in a.rows.split(","):
     seeds = [s_ for s_ in range(a.seeds) if os.path.exists(os.path.join(a.val_dir, f"{row.replace('|', '_')}_seed{s_}.pt"))]
     assert seeds, f"no saved predictions for {row}"
@@ -66,6 +119,7 @@ for row in a.rows.split(","):
     print(fmt(f"{row} (single seed, mean of {len(seeds)})", m))
     E = ours(row, seeds)
     print(fmt(f"{row} ({len(seeds)}-seed ensemble)", score(E)))
+    BREAK.append((f"{row} ({len(seeds)}-seed ens.)", E))
     for w in (0.5, 1.0, 2.0):
         F_ = {k: lsm(TA[k] + w * E[k]) for k in TA}
         print(fmt(f"TempAgg + {w:g} x {row} ensemble", score(F_)))
@@ -80,7 +134,14 @@ for row in a.rows.split(","):
             ta = float(np.interp(r["action_top5"], xs, ys))
             print(f"    tau {t:4.2f} | top-5 acc {r['action_top5']:5.1f} | ours {r['action']:5.1f}  TempAgg {ta:5.1f}  gap {r['action'] - ta:+.1f}")
     F_ = {k: lsm(TA[k] + E[k]) for k in TA}
+    BREAK.append((f"TempAgg + {row}", F_))
     print(f"  LA curve, TempAgg + {row} ensemble (equal weight):")
     for tau in (0, 0.5, 1, 1.5, 2, 2.5, 3):
         r = score(F_, tau)
         print(f"    tau {tau:4.2f} | action {r['action']:5.1f} | top-1 {r['action_top1']:5.1f} top-5 acc {r['action_top5']:5.1f}")
+
+print("\nclass-mean recall@5 verb / object / action by split (official tail list and seen / unseen toys)")
+for tau in (0.0, 1.0):
+    print(f" LA tau {tau:g}:")
+    for name, S in BREAK:
+        breakdown(name, S, tau)
