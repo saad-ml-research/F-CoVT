@@ -234,3 +234,19 @@ Same 1,000 validation segments for all generative rows (one run each):
 
 Probe with 2 reasoning tokens (12k train subset, 3 seeds): 8.2 -> 8.7 without LA, 11.0 -> 11.0 with LA
 (with soft history: 8.8 -> 9.0, 11.5 -> 11.6). Reasoning does not help beyond fine-tuning on the answers.
+
+### GRPO on the probe's action head (`--tag grpo`)
+
+8 sampled top-5 lists per segment (Plackett-Luce), group-standardized advantage, KL 0.05 to the start, 3 epochs,
+best held-out epoch kept (epoch 0 = no RL).
+
+| model | action | action top-1 | action top-5 acc | action + LA |
+|---|---|---|---|---|
+| VLM grid + TSM + teaching | 11.1 ± 0.6 | 12.0 ± 0.6 | 31.4 ± 2.0 | 15.9 ± 1.6 |
+| + GRPO, hit | 11.0 ± 0.2 | 11.4 ± 0.2 | 29.6 ± 0.5 | 14.8 ± 0.4 |
+| + GRPO, hit x class weight | 11.1 ± 0.1 | 11.4 ± 0.2 | 29.7 ± 0.9 | 14.8 ± 0.4 |
+| + GRPO, + verb / object partial credit | 11.2 ± 0.4 | 11.7 ± 0.8 | 30.6 ± 2.3 | 15.4 ± 1.9 |
+| + GRPO, + teacher agreement (no RL epoch kept in any seed) | 11.1 ± 0.5 | 12.5 ± 0.3 | 32.9 ± 1.1 | 16.2 ± 1.6 |
+
+GRPO raises training reward but not held-out recall. The last row equals the first model (no RL kept), so its
+differences (+1.5 top-5 acc, +1.6 verb) are run-to-run noise.
