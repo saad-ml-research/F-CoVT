@@ -19,6 +19,9 @@ from huggingface_hub import hf_hub_download
 ap = argparse.ArgumentParser()
 ap.add_argument("csvs"); ap.add_argument("out")
 ap.add_argument("--view", default="C10119_rgb")
+ap.add_argument("--past_steps", type=int, default=16, help="steps of 0.25 s before the cut (16 = 4 s, 32 = 8 s)")
+ap.add_argument("--jvel", action="store_true", help="also every joint's velocity over 0.25 s (HandFormer-style trajectories)")
+ap.add_argument("--name", default="hand_bank.pt")
 a = ap.parse_args()
 NPZ = os.path.join(a.out, "npz"); os.makedirs(NPZ, exist_ok=True)
 
@@ -73,14 +76,15 @@ for k, seq in enumerate(seqs):
 print(f"poses done: {len(seqs) - len(missing)} recordings, {len(missing)} missing | {(time.time() - t0) / 60:.1f} min", flush=True)
 
 # ------------------------------------------------------------------ 2. tokens
-PAST = [-240 + 15 * i for i in range(16)]       # 60 fps offsets from the cut: -4.0 ... -0.25 s
+PAST = [-15 * a.past_steps + 15 * i for i in range(a.past_steps)]   # 60 fps offsets from the cut, every 0.25 s
+HD = 67 + (60 if a.jvel else 0)                 # values per hand
 FUT = [15 * (i + 1) for i in range(8)]          # +0.25 ... +2.0 s
 
 
 def step_feats(J, idx, center):
     """J [T, 2, 21, 3]; idx list of 60-fps frames -> [len(idx), 134]."""
     T = len(J)
-    out = np.zeros((len(idx), 2, 67), np.float32)
+    out = np.zeros((len(idx), 2, HD), np.float32)
     for n, t in enumerate(idx):
         t = min(max(t, 0), T - 1); tp = min(max(t - 15, 0), T - 1)
         for h in range(2):
@@ -88,14 +92,18 @@ def step_feats(J, idx, center):
             if not np.isfinite(j).all():
                 continue
             w = j[0]
-            vel = (w - jp[0]) / 100 if np.isfinite(jp).all() else np.zeros(3)
-            out[n, h] = np.concatenate([(w - center) / 100, ((j[1:] - w) / 100).ravel(), vel, [1.0]])
-    return out.reshape(len(idx), 134)
+            ok = np.isfinite(jp).all()
+            vel = (w - jp[0]) / 100 if ok else np.zeros(3)
+            parts = [(w - center) / 100, ((j[1:] - w) / 100).ravel(), vel]
+            if a.jvel:
+                parts.append(((j[1:] - jp[1:]) / 100).ravel() if ok else np.zeros(60))
+            out[n, h] = np.concatenate(parts + [[1.0]])
+    return out.reshape(len(idx), 2 * HD)
 
 
 bank = {}
 for s, rows in segs.items():
-    P = np.zeros((len(rows), 16, 134), np.float16); Fu = np.zeros((len(rows), 8, 134), np.float16)
+    P = np.zeros((len(rows), len(PAST), 2 * HD), np.float16); Fu = np.zeros((len(rows), 8, 2 * HD), np.float16)
     cur, J, center = None, None, None
     for i, (seq, start, _) in enumerate(rows):
         if seq != cur:
@@ -110,7 +118,7 @@ for s, rows in segs.items():
         P[i] = step_feats(J, [c60 + o for o in PAST], center)
         Fu[i] = step_feats(J, [c60 + o for o in FUT], center)
     bank[s] = {"past": torch.from_numpy(P), "fut": torch.from_numpy(Fu)}
-    pres = P[:, :, 66::67].astype(np.float32).mean()
+    pres = P[:, :, HD - 1::HD].astype(np.float32).mean()
     print(f"{s}: hand tokens built | share of steps with a hand present {pres:.2f}", flush=True)
-torch.save(bank, os.path.join(a.out, "hand_bank.pt"))
-print(f"saved {os.path.join(a.out, 'hand_bank.pt')} | {(time.time() - t0) / 60:.1f} min")
+torch.save(bank, os.path.join(a.out, a.name))
+print(f"saved {os.path.join(a.out, a.name)} ({len(PAST)} past steps, {2 * HD} values per step) | {(time.time() - t0) / 60:.1f} min")

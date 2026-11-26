@@ -40,6 +40,7 @@ ap.add_argument("--T", type=float, default=2.0)
 ap.add_argument("--every", type=int, default=5)
 ap.add_argument("--tag", default="")
 ap.add_argument("--texts", default="", help='style=path,... from 12_text_styles.py: rows +hXP-<style> (steps), +hXL-<style> (final state)')
+ap.add_argument("--lam_hand", type=float, default=0.5, help="weight of the hand-forecast loss for *_kdPA rows")
 ap.add_argument("--hands", default="", help="hand_bank.pt from 15_hand_bank.py: rows *_kdP (student + hands), *_kdF (teacher + hands), *_kdPF (both)")
 ap.add_argument("--thoughts", default="", help="dir from 13_reason.py thoughts: rows fuse_th_kd (+ 2 reasoning tokens)")
 ap.add_argument("--train_subset", default="", help="json list of train indices: train / held-out only on these")
@@ -82,6 +83,7 @@ ROWS["fuse_kdH"], ROWS["tsm_kdH"] = ROWS["fuse_kd"], ROWS["tsm_kd"]     # same s
 ROWS["fuse_th_kd"] = ROWS["fuse_kd"] + ["th"]
 # hand pose: P = student gets the last 4 s of hand motion; F = teacher (oracleP) also sees hands past + next 2 s
 ROWS["fuse_kdP"], ROWS["fuse_kdF"], ROWS["fuse_kdPF"] = ROWS["fuse_kd"] + ["p_past"], ROWS["fuse_kd"], ROWS["fuse_kd"] + ["p_past"]
+ROWS["fuse_kdPA"] = ROWS["fuse_kdP"]          # A = + auxiliary output: forecast the next 2 s of hand motion (real target)
 ROWS["tsm_kdP"], ROWS["tsm_kdF"], ROWS["tsm_kdPF"] = ROWS["tsm_kd"] + ["p_past"], ROWS["tsm_kd"], ROWS["tsm_kd"] + ["p_past"]          # + 2 tokens from the VLM's reasoning (13_reason.py thoughts)
 # teachers: oracle = TSM past + real future; oracleH = the same + the TRUE past-action labels (privileged)
 ROWS["oracleP"] = ROWS["oracle"] + ["p_past", "p_fut"]
@@ -122,6 +124,7 @@ def stats(x):
 
 cache = {}
 TDIM = [0]                     # (PCA dim + 1) of the text-style tokens, set when --texts is loaded
+HDIM = [0]                     # values per hand-pose step, set when --hands is loaded
 
 
 def gpu_data(layer):
@@ -171,6 +174,7 @@ def gpu_data(layer):
             out[s]["txt_m"] = TX[s]["mask"].to(dev)
     if a.hands:
         HB = torch.load(a.hands)
+        HDIM[0] = HB["train"]["past"].shape[-1]
         for s in ("train", "validation"):
             assert len(HB[s]["past"]) == len(Q[s]["y"]), f"{s}: hand bank and VLM bank differ"
             out[s]["p_past"], out[s]["p_fut"] = HB[s]["past"].to(dev), HB[s]["fut"].to(dev)
@@ -235,7 +239,7 @@ def tokens(D, groups, idx, hsrc="true:8"):
 
 
 class Probe(nn.Module):
-    def __init__(self):
+    def __init__(self, aux=False):
         super().__init__()
         d = a.d
         self.inq = nn.Sequential(nn.LayerNorm(4096), nn.Linear(4096, d))
@@ -243,7 +247,10 @@ class Probe(nn.Module):
         self.hemb = nn.ModuleList(nn.Embedding(n + 1, d) for n in SIZES)
         self.intx = nn.Sequential(nn.LayerNorm(4096), nn.Linear(4096, d))                # history as text (VLM language states)
         self.inth = nn.Sequential(nn.LayerNorm(4096), nn.Linear(4096, d))                # reasoning (thought) tokens
-        self.inhand = nn.Sequential(nn.LayerNorm(134), nn.Linear(134, d))                # hand-pose tokens
+        self.inhand = nn.Sequential(nn.LayerNorm(HDIM[0]), nn.Linear(HDIM[0], d)) if HDIM[0] else None   # hand-pose tokens
+        self.aux = aux
+        if aux:                                                                          # hand forecasting: 4th query
+            self.qa = nn.Parameter(torch.randn(1, 1, d) * 0.02); self.outa = nn.Linear(d, 8 * HDIM[0])
         self.intx2 = nn.Sequential(nn.LayerNorm(TDIM[0] - 1), nn.Linear(TDIM[0] - 1, d)) if TDIM[0] else None   # text styles (PCA)          # past action / verb / object labels
         self.kind = nn.Embedding(len(GROUPS), d); self.pos = nn.Embedding(512, d)
         layer = nn.TransformerEncoderLayer(d, 8, 4 * d, a.drop, batch_first=True, norm_first=True, activation="gelu")
@@ -258,7 +265,7 @@ class Probe(nn.Module):
     def embed(self, x):
         if x.dtype == torch.long:                                       # hard labels
             return sum(e(x[..., j]) for j, e in enumerate(self.hemb))
-        if x.shape[-1] == 134:
+        if HDIM[0] and x.shape[-1] == HDIM[0]:
             return self.inhand(x.float())
         if x.shape[-1] == 4098:
             return self.inth(x[..., :4096].float())
@@ -271,14 +278,20 @@ class Probe(nn.Module):
             return sum(p @ e.weight[:n] for p, e, n in zip(parts, self.hemb, SIZES))
         return (self.inq if x.shape[-1] == 4096 else self.int)(x.float())
 
-    def forward(self, xs, mask, kinds, posi):
+    def forward(self, xs, mask, kinds, posi, want_aux=False):
         h = torch.cat([self.embed(x) for x in xs], 1)
         h = h + self.kind(kinds) + self.pos(posi)
         pad = ~mask
         h = self.norm(self.blocks(h, src_key_padding_mask=pad))
-        q, _ = self.xattn(self.q.expand(len(h), -1, -1), h, h, key_padding_mask=pad)
+        qs = self.q.expand(len(h), -1, -1)
+        if self.aux:
+            qs = torch.cat([qs, self.qa.expand(len(h), -1, -1)], 1)
+        q, _ = self.xattn(qs, h, h, key_padding_mask=pad)
         q = self.drop(self.qnorm(q))
-        return [self.outs[j](q[:, j]) for j in range(3)]
+        outs = [self.outs[j](q[:, j]) for j in range(3)]
+        if want_aux:
+            return outs, self.outa(q[:, 3]).view(len(h), 8, HDIM[0])
+        return outs
 
 
 def focal(lg, y):
@@ -383,12 +396,20 @@ def grpo(m, D, groups, htr, fi, ho, teacher, variant, seed):
     return best[2]
 
 
+def hand_forecast_loss(pred, target):
+    """MSE on the next 2 s of hand motion, only where a hand is present (last value of each hand's block)."""
+    t = target.float().view(len(target), 8, 2, HDIM[0] // 2); p = pred.view_as(t)
+    w = t[..., -1:]                                        # present flag per step and hand
+    return (((p - t) ** 2) * w).sum() / (w.sum() * t.shape[-1]).clamp(min=1)
+
+
 def train(name, base, D, seed, fi, ho, teacher=None, rlv=""):
     torch.manual_seed(seed)
     base, _, hm = base.partition("+")
+    use_aux = base.endswith("PA")
     groups = ROWS[base] + (["h"] if hm else [])
     htr, hte = hmode(hm) if hm else ("true:8", "true:8")
-    m = Probe().to(dev)
+    m = Probe(aux=use_aux).to(dev)
     opt = torch.optim.AdamW(m.parameters(), lr=a.lr, weight_decay=a.wd)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, a.lr, total_steps=a.epochs * math.ceil(len(fi) / a.bs), pct_start=0.1)
     best = (-1.0, None, 0)
@@ -397,8 +418,13 @@ def train(name, base, D, seed, fi, ho, teacher=None, rlv=""):
         perm = fi[torch.randperm(len(fi), device=dev)]
         for s in range(0, len(perm), a.bs):
             b = perm[s:s + a.bs]
-            lg = m(*tokens(D["train"], groups, b, htr))
+            if use_aux:
+                lg, fc = m(*tokens(D["train"], groups, b, htr), want_aux=True)
+            else:
+                lg = m(*tokens(D["train"], groups, b, htr))
             loss = sum(focal(lg[j], D["train"]["y"][b, j]) for j in range(3))
+            if use_aux:
+                loss = loss + a.lam_hand * hand_forecast_loss(fc, D["train"]["p_fut"][b])
             if teacher is not None:
                 with torch.no_grad():
                     teacher[0].eval(); t = teacher[0](*tokens(D["train"], teacher[1], b, teacher[2]))
@@ -456,7 +482,7 @@ res = collections.defaultdict(list)
 VAL, TIMES, t_start = {}, {}, time.time()
 def _teacher_of(r_):
     b = r_.split("@")[0].split("#")[0].split("+")[0]
-    if not b.endswith(("_kd", "_kdH", "_kdP", "_kdF", "_kdPF")):
+    if not b.endswith(("_kd", "_kdH", "_kdP", "_kdF", "_kdPF", "_kdPA")):
         return None
     return "oracleH" if b.endswith("_kdH") else "oracleP" if b.endswith(("_kdF", "_kdPF")) else "oracle"
 
@@ -486,7 +512,7 @@ for seed in range(a.seeds):
         base, _, rlv = base.partition("#")                  # fuse_kd#bal = fuse_kd + GRPO with the 'bal' reward
         D = gpu_data(int(layer))
         b0 = base.split("+")[0]
-        if b0.endswith(("_kd", "_kdH", "_kdP", "_kdF", "_kdPF")):
+        if b0.endswith(("_kd", "_kdH", "_kdP", "_kdF", "_kdPF", "_kdPA")):
             tk = "oracleH" if b0.endswith("_kdH") else "oracleP" if b0.endswith(("_kdF", "_kdPF")) else "oracle"
             if tk not in teachers:
                 t_ = time.time()
