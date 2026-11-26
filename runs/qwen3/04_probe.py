@@ -81,6 +81,11 @@ ROWS = {"q_last": ["q_last"], "q_rec": ["q_rec"], "q_hist": ["q_hist", "q_rec"],
         "fuse_kd": ["q_hist", "q_rec", "t_hist", "t_rec"], "oracle": ["t_hist", "t_rec", "t_fut"], "hlab": []}
 ROWS["fuse_kdH"], ROWS["tsm_kdH"] = ROWS["fuse_kd"], ROWS["tsm_kd"]     # same students, taught by oracleH
 ROWS["fuse_th_kd"] = ROWS["fuse_kd"] + ["th"]
+# history-length ablation (same teacher): no VLM history frames / TSM history 30 s or 10 s / both short
+ROWS["fuse_noqh_kd"] = ["q_rec", "t_hist", "t_rec"]
+ROWS["fuse_t30_kd"] = ["q_hist", "q_rec", "t_hist:15", "t_rec"]
+ROWS["fuse_t10_kd"] = ["q_hist", "q_rec", "t_hist:5", "t_rec"]
+ROWS["fuse_t10_noqh_kd"] = ["q_rec", "t_hist:5", "t_rec"]
 # hand pose: P = student gets the last 4 s of hand motion; F = teacher (oracleP) also sees hands past + next 2 s
 ROWS["fuse_kdP"], ROWS["fuse_kdF"], ROWS["fuse_kdPF"] = ROWS["fuse_kd"] + ["p_past"], ROWS["fuse_kd"], ROWS["fuse_kd"] + ["p_past"]
 ROWS["fuse_kdPA"] = ROWS["fuse_kdP"]          # A = + auxiliary output: forecast the next 2 s of hand motion (real target)
@@ -229,8 +234,16 @@ def tokens(D, groups, idx, hsrc="true:8"):
                 x = D["h_" + src][idx][:, -L:]
             m = D["h_m"][idx][:, -L:]
         else:
+            g, _, keep = g.partition(":")                      # "t_hist:5" = only the 5 most recent history windows
             x = D[g][idx]
             m = D[g + "_m"][idx] if g + "_m" in D else torch.ones(len(idx), x.shape[1], dtype=torch.bool, device=dev)
+            N = x.shape[1]
+            if keep:
+                x, m = x[:, -int(keep):], m[:, -int(keep):]
+            n = x.shape[1]
+            xs.append(x); ms.append(m)                           # positions keep their place in the full window
+            kinds.append(torch.full((n,), GROUPS[g], device=dev)); posi.append(torch.arange(N - n, N, device=dev))
+            continue
         n = x.shape[1]
         xs.append(x)
         ms.append(m)
