@@ -54,6 +54,7 @@ ap.add_argument("--curve", action="store_true", help="print the full LA curve (r
 ap.add_argument("--la", default="0,0.25,0.5,0.75,1,1.5,2,2.5,3,4,5", help="logit-adjustment strengths; picked on held-out TRAIN")
 ap.add_argument("--fuse", default="", help='late fusion of val predictions: "rowA|rowB,..." (sum of log-probs)')
 ap.add_argument("--text", default="", help="text.pt from 11_text_feats.py: enables +hX (true text) / +hXP (predicted text)")
+ap.add_argument("--dino", default="", help="dino.pt from 16_dino_grid.py: rows dino_* / both_* (plain-ViT frame tokens, group d_rec)")
 ap.add_argument("--recog", default="", help="recog.pt from 06_recog.py: enables history rows (+hT, +hTP, +hP)")
 a = ap.parse_args()
 dev = "cuda"
@@ -75,7 +76,7 @@ SIZES = [int(max(Q["train"]["y"][:, j].max(), Q["validation"]["y"][:, j].max()))
 print(f"train {len(Q['train']['y'])}  val {len(Q['validation']['y'])} | VLM layers {LAYERS} | classes {SIZES}", flush=True)
 
 # token groups: name -> (source, kind id, n tokens); positions = index inside the group
-GROUPS = {"q_last": 0, "q_hist": 1, "q_rec": 2, "t_hist": 3, "t_rec": 4, "t_fut": 5, "h": 6, "th": 7, "p_past": 8, "p_fut": 9}
+GROUPS = {"q_last": 0, "q_hist": 1, "q_rec": 2, "t_hist": 3, "t_rec": 4, "t_fut": 5, "h": 6, "th": 7, "p_past": 8, "p_fut": 9, "d_rec": 10}
 ROWS = {"q_last": ["q_last"], "q_rec": ["q_rec"], "q_hist": ["q_hist", "q_rec"], "tsm_hist": ["t_hist", "t_rec"],
         "tsm_kd": ["t_hist", "t_rec"], "fuse": ["q_hist", "q_rec", "t_hist", "t_rec"],
         "fuse_kd": ["q_hist", "q_rec", "t_hist", "t_rec"], "oracle": ["t_hist", "t_rec", "t_fut"], "hlab": []}
@@ -87,6 +88,10 @@ ROWS["fuse_t30_kd"] = ["q_hist", "q_rec", "t_hist:15", "t_rec"]
 ROWS["fuse_t10_kd"] = ["q_hist", "q_rec", "t_hist:5", "t_rec"]
 ROWS["fuse_t10_noqh_kd"] = ["q_rec", "t_hist:5", "t_rec"]
 ROWS["fuse_t30_noqh_kd"] = ["q_rec", "t_hist:15", "t_rec"]
+# plain ViT (DINOv2, 3 x 3 grid of the 4 recent frames) instead of / next to the VLM frames; tsm_t10 = no frame tokens at all
+ROWS["dino_t10_kd"] = ["d_rec", "t_hist:5", "t_rec"]
+ROWS["both_t10_kd"] = ["q_rec", "d_rec", "t_hist:5", "t_rec"]
+ROWS["tsm_t10_kd"] = ["t_hist:5", "t_rec"]
 # hand pose: P = student gets the last 4 s of hand motion; F = teacher (oracleP) also sees hands past + next 2 s
 ROWS["fuse_kdP"], ROWS["fuse_kdF"], ROWS["fuse_kdPF"] = ROWS["fuse_kd"] + ["p_past"], ROWS["fuse_kd"], ROWS["fuse_kd"] + ["p_past"]
 ROWS["fuse_kdPA"] = ROWS["fuse_kdP"]          # A = + auxiliary output: forecast the next 2 s of hand motion (real target)
@@ -131,6 +136,7 @@ def stats(x):
 cache = {}
 TDIM = [0]                     # (PCA dim + 1) of the text-style tokens, set when --texts is loaded
 HDIM = [0]                     # values per hand-pose step, set when --hands is loaded
+DDIM = [0]                     # DINOv2 width, set when --dino is loaded
 
 
 def gpu_data(layer):
@@ -178,6 +184,15 @@ def gpu_data(layer):
                 x = TX[s][k].float(); x = torch.cat([x, torch.ones_like(x[..., :1])], -1)   # 4097-d: marks text tokens
                 out[s]["txt_" + src] = x.half().to(dev)
             out[s]["txt_m"] = TX[s]["mask"].to(dev)
+    if a.dino:
+        DB = torch.load(a.dino)
+        DDIM[0] = DB["train"]["rec"].shape[-1]
+        assert DDIM[0] not in (4096, 2048, PSUM, HDIM[0], TDIM[0]), "DINO width clashes with another token type"
+        md, sd = stats(DB["train"]["rec"])
+        for s in ("train", "validation"):
+            assert torch.equal(DB[s]["y"], Q[s]["y"]), f"{s}: DINO and VLM banks differ"
+            n = len(DB[s]["y"])
+            out[s]["d_rec"] = ((DB[s]["rec"].float() - md) / sd).half().reshape(n, -1, DDIM[0]).to(dev)
     if a.hands:
         HB = torch.load(a.hands)
         HDIM[0] = HB["train"]["past"].shape[-1]
@@ -261,6 +276,7 @@ class Probe(nn.Module):
         self.hemb = nn.ModuleList(nn.Embedding(n + 1, d) for n in SIZES)
         self.intx = nn.Sequential(nn.LayerNorm(4096), nn.Linear(4096, d))                # history as text (VLM language states)
         self.inth = nn.Sequential(nn.LayerNorm(4096), nn.Linear(4096, d))                # reasoning (thought) tokens
+        self.indino = nn.Sequential(nn.LayerNorm(DDIM[0]), nn.Linear(DDIM[0], d)) if DDIM[0] else None   # DINOv2 tokens
         self.inhand = nn.Sequential(nn.LayerNorm(HDIM[0]), nn.Linear(HDIM[0], d)) if HDIM[0] else None   # hand-pose tokens
         self.aux = aux
         if aux:                                                                          # hand forecasting: 4th query
@@ -279,6 +295,8 @@ class Probe(nn.Module):
     def embed(self, x):
         if x.dtype == torch.long:                                       # hard labels
             return sum(e(x[..., j]) for j, e in enumerate(self.hemb))
+        if DDIM[0] and x.shape[-1] == DDIM[0]:
+            return self.indino(x.float())
         if HDIM[0] and x.shape[-1] == HDIM[0]:
             return self.inhand(x.float())
         if x.shape[-1] == 4098:
