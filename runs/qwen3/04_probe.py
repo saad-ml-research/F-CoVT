@@ -55,6 +55,7 @@ ap.add_argument("--curve", action="store_true", help="print the full LA curve (r
 ap.add_argument("--la", default="0,0.25,0.5,0.75,1,1.5,2,2.5,3,4,5", help="logit-adjustment strengths; picked on held-out TRAIN")
 ap.add_argument("--fuse", default="", help='late fusion of val predictions: "rowA|rowB,..." (sum of log-probs)')
 ap.add_argument("--text", default="", help="text.pt from 11_text_feats.py: enables +hX (true text) / +hXP (predicted text)")
+ap.add_argument("--experts", default="", help="name=path,... from 17_frame_experts.py: rows ex_<name><k>_..._kd (single-frame expert tokens on the no-history model)")
 ap.add_argument("--dino", default="", help="dino.pt from 16_dino_grid.py: rows dino_* / both_* (plain-ViT frame tokens, group d_rec)")
 ap.add_argument("--recog", default="", help="recog.pt from 06_recog.py: enables history rows (+hT, +hTP, +hP)")
 a = ap.parse_args()
@@ -93,6 +94,14 @@ ROWS["fuse_t30_noqh_kd"] = ["q_rec", "t_hist:15", "t_rec"]
 ROWS["dino_t10_kd"] = ["d_rec", "t_hist:5", "t_rec"]
 ROWS["both_t10_kd"] = ["q_rec", "d_rec", "t_hist:5", "t_rec"]
 ROWS["tsm_t10_kd"] = ["t_hist:5", "t_rec"]
+# single-frame vision experts (17_frame_experts.py) on the no-history model: ex_dino9_sam4_kd = + 9 DINOv2 + 4 SAM tokens
+for _r in a.rows.split(","):
+    _b = _r.split("@")[0].split("#")[0].split("+")[0]
+    if _b.startswith("ex_") and _b.endswith("_kd"):
+        _t = _b[3:-3].split("_")
+        for _x in _t:
+            GROUPS.setdefault("x_" + _x, len(GROUPS))
+        ROWS[_b] = ROWS["fuse_t10_noqh_kd"] + ["x_" + _x for _x in _t]
 # hand pose: P = student gets the last 4 s of hand motion; F = teacher (oracleP) also sees hands past + next 2 s
 ROWS["fuse_kdP"], ROWS["fuse_kdF"], ROWS["fuse_kdPF"] = ROWS["fuse_kd"] + ["p_past"], ROWS["fuse_kd"], ROWS["fuse_kd"] + ["p_past"]
 ROWS["fuse_kdPA"] = ROWS["fuse_kdP"]          # A = + auxiliary output: forecast the next 2 s of hand motion (real target)
@@ -138,6 +147,7 @@ cache = {}
 TDIM = [0]                     # (PCA dim + 1) of the text-style tokens, set when --texts is loaded
 HDIM = [0]                     # values per hand-pose step, set when --hands is loaded
 DDIM = [0]                     # DINOv2 width, set when --dino is loaded
+EXP_DIMS = []                  # padded widths of the single-frame expert tokens (one input layer each)
 
 
 def gpu_data(layer):
@@ -185,6 +195,26 @@ def gpu_data(layer):
                 x = TX[s][k].float(); x = torch.cat([x, torch.ones_like(x[..., :1])], -1)   # 4097-d: marks text tokens
                 out[s]["txt_" + src] = x.half().to(dev)
             out[s]["txt_m"] = TX[s]["mask"].to(dev)
+    for spec in [x for x in a.experts.split(",") if x]:
+        ename, epath = spec.split("=")
+        EB = torch.load(epath)
+        for k in [k for k in EB["train"] if re.fullmatch(r"g\d+", k)]:
+            gname = f"x_{ename}{k[1:]}"
+            if gname not in GROUPS:
+                continue
+            me, se = stats(EB["train"][k])
+            D0 = EB["train"][k].shape[-1]
+            used = {4096, 2048, 4097, 4098, PSUM, HDIM[0], TDIM[0], DDIM[0], *EXP_DIMS}
+            W = D0 + 1
+            while W in used:
+                W += 1
+            EXP_DIMS.append(W)
+            for s in ("train", "validation"):
+                assert torch.equal(EB[s]["y"], Q[s]["y"]), f"{s}: expert {ename} and VLM banks differ"
+                x = (EB[s][k].float() - me) / se
+                x = torch.cat([x, torch.ones(*x.shape[:-1], W - D0)], -1)       # marker columns -> unique width per group
+                out[s][gname] = x.half().to(dev)
+            print(f"expert tokens {gname}: {tuple(EB['train'][k].shape[1:])} -> width {W}", flush=True)
     if a.dino:
         DB = torch.load(a.dino)
         DDIM[0] = DB["train"]["rec"].shape[-1]
@@ -277,6 +307,7 @@ class Probe(nn.Module):
         self.hemb = nn.ModuleList(nn.Embedding(n + 1, d) for n in SIZES)
         self.intx = nn.Sequential(nn.LayerNorm(4096), nn.Linear(4096, d))                # history as text (VLM language states)
         self.inth = nn.Sequential(nn.LayerNorm(4096), nn.Linear(4096, d))                # reasoning (thought) tokens
+        self.inexp = nn.ModuleDict({f"w{w}": nn.Sequential(nn.LayerNorm(w), nn.Linear(w, d)) for w in EXP_DIMS})   # single-frame experts
         self.indino = nn.Sequential(nn.LayerNorm(DDIM[0]), nn.Linear(DDIM[0], d)) if DDIM[0] else None   # DINOv2 tokens
         self.inhand = nn.Sequential(nn.LayerNorm(HDIM[0]), nn.Linear(HDIM[0], d)) if HDIM[0] else None   # hand-pose tokens
         self.aux = aux
@@ -296,6 +327,8 @@ class Probe(nn.Module):
     def embed(self, x):
         if x.dtype == torch.long:                                       # hard labels
             return sum(e(x[..., j]) for j, e in enumerate(self.hemb))
+        if x.shape[-1] in EXP_DIMS:
+            return self.inexp[f"w{x.shape[-1]}"](x.float())
         if DDIM[0] and x.shape[-1] == DDIM[0]:
             return self.indino(x.float())
         if HDIM[0] and x.shape[-1] == HDIM[0]:
