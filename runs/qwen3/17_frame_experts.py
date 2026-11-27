@@ -5,7 +5,7 @@ so 04_probe.py can test 1 / 4 / 9 / 16 tokens (hands: 2 = one per hand).
          average-pooled to 2 x 2 / 3 x 3 / 4 x 4 cells (row-major). 1024-d.
   depth  Depth Anything V2 Large (relative depth), processor defaults; depth map divided by its median (per image),
          then per cell [mean, std, 5th percentile, 95th percentile] -> 4-d tokens, g1 / g4 / g9 / g16.
-  sam    SAM 3 (facebook/sam3) image encoder at its 1008 px input (the frame is upsampled), the coarsest feature map,
+  sam    SAM 3 (facebook/sam3) at its 1008 px input (the frame is upsampled): the ViT backbone tokens (72 x 72, 1024-d),
          average-pooled to g1 / g4 / g9 / g16.
   hands  MediaPipe Hands on the frame upscaled 2x (single image, this camera only): per hand slot (by handedness)
          [present, score, wrist x, wrist y (image-normalized), 20 joints relative to the wrist (x, y, z)] = 64-d;
@@ -128,6 +128,10 @@ def make_sam():
         maps = [t for t in found if t.dim() == 4 and min(t.shape[-2:]) >= 4]
         if first[0]:
             print("[sam] vision outputs:", [tuple(t.shape) for t in found], flush=True); first[0] = False
+        vit = [t for t in found if t.dim() == 3 and int(round(t.shape[1] ** 0.5)) ** 2 == t.shape[1]]
+        if vit:                                       # prefer the ViT backbone tokens (72 x 72 x 1024) over the 256-d FPN neck
+            t = vit[0]; s = int(round(t.shape[1] ** 0.5))
+            return t.transpose(1, 2).reshape(len(t), -1, s, s)
         if maps:
             return min(maps, key=lambda t: t.shape[-1] * t.shape[-2])
         t = [t for t in found if t.dim() == 3][-1]                                # [B, N, C] -> square map
