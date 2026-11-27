@@ -27,6 +27,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("q3"); ap.add_argument("tsm")
 ap.add_argument("--rows", default="q_last,q_rec,q_hist@18,q_hist@27,q_hist@36,tsm_hist,fuse,fuse_kd,tsm_kd")
 ap.add_argument("--seeds", type=int, default=3)
+ap.add_argument("--seed0", type=int, default=0, help="first seed (repeat runs: 10, 20, ...); saved files are still numbered _seed0.._seed{n-1}")
 ap.add_argument("--d", type=int, default=512)
 ap.add_argument("--blocks", type=int, default=2)
 ap.add_argument("--epochs", type=int, default=20)
@@ -525,13 +526,13 @@ JOBS = rows + sorted({_teacher_of(r_) for r_ in rows} - {None})
 def eta(seed, done_names):
     """minutes left: known per-row times (from seed 0), mean time for rows not seen yet."""
     known = list(TIMES.values()); avg = sum(known) / len(known) if known else 0
-    left = [n for n in JOBS if n not in done_names] + JOBS * (a.seeds - seed - 1)
+    left = [n for n in JOBS if n not in done_names] + JOBS * (a.seeds - (seed - a.seed0) - 1)
     m = sum(TIMES.get(n, avg) for n in left) / 60
     fin = time.strftime("%H:%M UTC", time.gmtime(time.time() + m * 60))
     return f"[timer] {(time.time() - t_start) / 60:.0f} min elapsed, ~{m:.0f} min left (done around {fin})"
 
 
-for seed in range(a.seeds):
+for seed in range(a.seed0, a.seed0 + a.seeds):
     done_names = []
     perm = torch.randperm(len(Q["train"]["y"]), generator=torch.Generator().manual_seed(seed)).to(dev)
     if a.train_subset:
@@ -563,7 +564,7 @@ for seed in range(a.seeds):
         TIMES.setdefault(name, time.time() - t_); done_names.append(name)
         if a.save_val:
             os.makedirs(a.save_val, exist_ok=True)
-            torch.save([x.cpu() for x in VAL[name]], os.path.join(a.save_val, f"{name.replace('|', '_')}_seed{seed}.pt"))
+            torch.save([x.cpu() for x in VAL[name]], os.path.join(a.save_val, f"{name.replace('|', '_')}_seed{seed - a.seed0}.pt"))
         res[name].append(r)
         print(f"{name:12s} seed {seed}: verb {r['verb']:5.1f}  object {r['noun']:5.1f}  action {r['action']:4.1f}"
               f"  top-1 {r['action_top1']:4.1f}  epoch {r['epoch']}", flush=True)
@@ -578,7 +579,7 @@ for seed in range(a.seeds):
         fl = [VAL[A][j].float() + VAL[B][j].float() for j in range(3)]
         r = scores(fl, D["validation"]["y"]); res[f"{A}|{B}"].append(r)
         if a.save_val:
-            torch.save([x.half().cpu() for x in fl], os.path.join(a.save_val, f"{A}_{B}_seed{seed}.pt"))
+            torch.save([x.half().cpu() for x in fl], os.path.join(a.save_val, f"{A}_{B}_seed{seed - a.seed0}.pt"))
         print(f"{A + '|' + B:24s} seed {seed}: verb {r['verb']:5.1f}  object {r['noun']:5.1f}  action {r['action']:4.1f}"
               f"  top-1 {r['action_top1']:4.1f}  (late fusion)", flush=True)
         if a.curve:
